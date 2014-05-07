@@ -353,9 +353,9 @@ testcases.forEach(function(testcase) {
   var binaryDifference = testcase[3];
   
   test(name, function() {
-    myDeepEqual(cbor.decode(hex2arrayBuffer(data)), expected, "Decoding");
-    var encoded = cbor.encode(expected);
-    myDeepEqual(cbor.decode(encoded), expected, "Encoding (deepEqual)");
+    myDeepEqual(CBOR.decode(hex2arrayBuffer(data)), expected, "Decoding");
+    var encoded = CBOR.encode(expected);
+    myDeepEqual(CBOR.decode(encoded), expected, "Encoding (deepEqual)");
     if (!binaryDifference) {
       var hex = "";
       var uint8Array = new Uint8Array(encoded);
@@ -370,14 +370,14 @@ test("Big Array", function() {
   var value = new Array(0x10001);
   for (var i = 0; i < value.length; ++i)
     value[i] = i;
-  deepEqual(cbor.decode(cbor.encode(value)), value, 'deepEqual')
+  deepEqual(CBOR.decode(CBOR.encode(value)), value, 'deepEqual')
 });
 
 test("Remaining Bytes", function() {
   var threw = false;
   try {
     var arrayBuffer = new ArrayBuffer(2);
-    cbor.decode(arrayBuffer)
+    CBOR.decode(arrayBuffer)
   } catch (e) {
     threw = e;
   }
@@ -395,7 +395,7 @@ test("Tagging", function() {
   }
 
   var arrayBuffer = hex2arrayBuffer("83d81203d9456708f8f0");
-  var decoded = cbor.decode(arrayBuffer, function(value, tag) {
+  var decoded = CBOR.decode(arrayBuffer, function(value, tag) {
     return new TaggedValue(value, tag);
   }, function(value) {
     return new SimpleValue(value);

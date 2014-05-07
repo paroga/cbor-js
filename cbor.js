@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-if (!this.cbor) (function(global, undefined) { "use strict";
+if (!this.CBOR) (function(global, undefined) { "use strict";
 var POW_2_24 = Math.pow(2, -24),
     POW_2_32 = Math.pow(2, 32),
     POW_2_53 = Math.pow(2, 53);
@@ -348,6 +348,6 @@ function decode(data, tagger, simpleValue) {
   return ret;
 }
 
-global.cbor = { encode: encode, decode: decode };
+global.CBOR = { encode: encode, decode: decode };
 
 })(this);

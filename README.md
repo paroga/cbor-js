@@ -14,12 +14,12 @@ The Concise Binary Object Representation (CBOR) data format ([RFC 7049](http://t
 API
 ---
 
-The `cbor`-object provides the following two functions:
+The `CBOR`-object provides the following two functions:
 
-cbor.**decode**(*data*)
+CBOR.**decode**(*data*)
 > Take the ArrayBuffer object *data* and return it decoded as a JavaScript object.
 
-cbor.**encode**(*data*)
+CBOR.**encode**(*data*)
 > Take the JavaScript object *data* and return it encoded as a ArrayBuffer object.
 
 Usage
@@ -30,11 +30,11 @@ Include `cbor.js` in your or HTML page:
 <script src="path/to/cbor.js" type="text/javascript"></script>
 ```
 
-Then you can use it via the `cbor`-object in your code:
+Then you can use it via the `CBOR`-object in your code:
 ```javascript
 var initial = { Hello: "World" };
-var encoded = cbor.encode(initial);
-var decoded = cbor.decode(encoded);
+var encoded = CBOR.encode(initial);
+var decoded = CBOR.decode(encoded);
 ```
 After running this example `initial` and `decoded` represent the same value.
 
@@ -46,8 +46,8 @@ var websocket = new WebSocket(url);
 websocket.binaryType = "arraybuffer";
 ...
 websocket.onmessage = function(event) {
-  var message = cbor.decode(event.data);
+  var message = CBOR.decode(event.data);
 };
 ...
-websocket.send(cbor.encode(message));
+websocket.send(CBOR.encode(message));
 ```
