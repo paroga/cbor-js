@@ -112,6 +112,7 @@ module.exports = function(grunt) {
     }
   });
 
+  grunt.loadNpmTasks("grunt-bower-install-simple");
   grunt.loadNpmTasks("grunt-contrib-connect");
   grunt.loadNpmTasks("grunt-contrib-jshint");
   grunt.loadNpmTasks("grunt-contrib-qunit");
@@ -120,6 +121,6 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks("grunt-saucelabs");
 
   grunt.registerTask("default", ["test"]);
-  grunt.registerTask("test", ["qunit", "jshint"]);
+  grunt.registerTask("test", ["bower-install-simple", "qunit", "jshint"]);
   grunt.registerTask("ci", ["test", "coveralls", "connect", "saucelabs-qunit"]);
 };
