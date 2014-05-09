@@ -11,11 +11,26 @@
   <script src="../bower_components/qunit/qunit/qunit.js"></script>
   <script src="../cbor.js"></script>
   <script src="../cbor.js"></script>
+  <script>
+    function define(id, obj) {
+      if (!arguments.callee.amd)
+        throw "Called non-AMD function"
+      if (id !== "cbor/cbor")
+        throw "Unecpected id."
+      if (!("decode" in obj && "encode" in obj))
+        throw "Unecpected object";
+    }
+  </script>
+  <script src="../cbor.js"></script>
+  <script>
+    define.amd = {};
+  </script>
+  <script src="../cbor.js"></script>
   <script src="./tests.js"></script>
   <script>
     QUnit.done(function(results){
       window.global_test_results = results;
-  });
+    });
   </script>
 </body>
 </html>
