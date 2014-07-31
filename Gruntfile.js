@@ -51,6 +51,13 @@ module.exports = function(grunt) {
 
   grunt.initConfig({
     pkg: grunt.file.readJSON("package.json"),
+    "bower-install-simple": {
+      all: {
+        options: {
+          production: false
+        }
+      }
+    },
     connect: {
       server: {
         options: {
