@@ -116,6 +116,11 @@ var testcases = function(undefined) {
       "4401020304",
       generateArrayBuffer([1,2,3,4])
     ], [
+      "Bytestring [1,2,3,4,5]",
+      "5f42010243030405ff",
+      generateArrayBuffer([1,2,3,4,5]),
+      true
+    ], [
       "String ''",
       "60",
       ""
@@ -144,9 +149,23 @@ var testcases = function(undefined) {
       "64f0908591",
       "\ud800\udd51"
     ], [
+      "String 'streaming'",
+      "7f657374726561646d696e67ff",
+      "streaming",
+      true
+    ], [
       "Array []",
       "80",
       []
+    ], [
+      "Array ['a', {'b': 'c'}]",
+      "826161a161626163",
+      ["a", {"b": "c"}]
+    ], [
+      "Array ['a, {_ 'b': 'c'}]",
+      "826161bf61626163ff",
+      ["a", {"b": "c"}],
+      true
     ], [
       "Array [1,2,3]",
       "83010203",
@@ -156,9 +175,39 @@ var testcases = function(undefined) {
       "8301820203820405",
       [1, [2, 3], [4, 5]]
     ], [
+      "Array [1, [2, 3], [_ 4, 5]]",
+      "83018202039f0405ff",
+      [1, [2, 3], [4, 5]],
+      true
+    ], [
+      "Array [1, [_ 2, 3], [4, 5]]",
+      "83019f0203ff820405",
+      [1, [2, 3], [4, 5]],
+      true
+    ], [
       "Array [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]",
       "98190102030405060708090a0b0c0d0e0f101112131415161718181819",
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]
+    ], [
+      "Array [_ 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]",
+      "9f0102030405060708090a0b0c0d0e0f101112131415161718181819ff",
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+      true
+    ], [
+      "Array [_ 1, [2, 3], [4, 5]]",
+      "9f01820203820405ff",
+      [1, [2, 3], [4, 5]],
+      true
+    ], [
+      "Array [_ 1, [2, 3], [_ 4, 5]]",
+      "9f018202039f0405ffff",
+      [1, [2, 3], [4, 5]],
+      true
+    ], [
+      "Array [_ ]",
+      "9fff",
+      [],
+      true
     ], [
       "Object {}",
       "a0",
@@ -169,10 +218,6 @@ var testcases = function(undefined) {
       {1: 2, 3: 4},
       true
     ], [
-      "Array ['a', {'b': 'c'}]",
-      "826161a161626163",
-      ["a", {"b": "c"}]
-    ], [
       "Object {'a': 1, 'b': [2, 3]}",
       "a26161016162820203",
       {"a": 1, "b": [2, 3]},
@@ -181,6 +226,16 @@ var testcases = function(undefined) {
       "Object {'a': 'A', 'b': 'B', 'c': 'C', 'd': 'D', 'e': 'E'}",
       "a56161614161626142616361436164614461656145",
       {"a": "A", "b": "B", "c": "C", "d": "D", "e": "E"},
+      true
+    ], [
+      "Object {_ 'a': 1, 'b': [_ 2, 3]}",
+      "bf61610161629f0203ffff",
+      {"a": 1, "b": [2, 3]},
+      true
+    ], [
+      "Object {_ 'Fun': true, 'Amt': -2}",
+      "bf6346756ef563416d7421ff",
+      {"Fun": true, "Amt": -2},
       true
     ], [
       "Tag Self-describe CBOR 0",
@@ -351,7 +406,7 @@ testcases.forEach(function(testcase) {
   var data = testcase[1];
   var expected = testcase[2];
   var binaryDifference = testcase[3];
-  
+
   test(name, function() {
     myDeepEqual(CBOR.decode(hex2arrayBuffer(data)), expected, "Decoding");
     var encoded = CBOR.encode(expected);
@@ -381,7 +436,51 @@ test("Remaining Bytes", function() {
   } catch (e) {
     threw = e;
   }
-  
+
+  ok(threw, "Thrown exception");
+});
+
+test("Invalid length encoding", function() {
+  var threw = false;
+  try {
+    CBOR.decode(hex2arrayBuffer("1e"))
+  } catch (e) {
+    threw = e;
+  }
+
+  ok(threw, "Thrown exception");
+});
+
+test("Invalid length", function() {
+  var threw = false;
+  try {
+    CBOR.decode(hex2arrayBuffer("1f"))
+  } catch (e) {
+    threw = e;
+  }
+
+  ok(threw, "Thrown exception");
+});
+
+test("Invalid indefinite length element type", function() {
+  var threw = false;
+  try {
+    CBOR.decode(hex2arrayBuffer("5f00"))
+  } catch (e) {
+    threw = e;
+  }
+
+  ok(threw, "Thrown exception");
+});
+
+test("Invalid indefinite length element length", function() {
+  var threw = false;
+  try {
+    CBOR.decode(hex2arrayBuffer("5f5f"))
+  } catch (e) {
+    threw = e;
+  }
+
   ok(threw, "Thrown exception");
 });
 

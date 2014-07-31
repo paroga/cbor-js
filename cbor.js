@@ -236,6 +236,68 @@ function decode(data, tagger, simpleValue) {
   function readUint64() {
     return readUint32() * POW_2_32 + readUint32();
   }
+  function readBreak() {
+    if (dataView.getUint8(offset) !== 0xff)
+      return false;
+    offset += 1;
+    return true;
+  }
+  function readLength(additionalInformation) {
+    if (additionalInformation < 24)
+      return additionalInformation;
+    if (additionalInformation === 24)
+      return readUint8();
+    if (additionalInformation === 25)
+      return readUint16();
+    if (additionalInformation === 26)
+      return readUint32();
+    if (additionalInformation === 27)
+      return readUint64();
+    if (additionalInformation === 31)
+      return -1;
+    throw "Invalid length encoding";
+  }
+  function readIndefiniteStringLength(majorType) {
+    var initialByte = readUint8();
+    if (initialByte === 0xff)
+      return -1;
+    var length = readLength(initialByte & 0x1f);
+    if (length < 0 || (initialByte >> 5) !== majorType)
+      throw "Invalid indefinite length element";
+    return length;
+  }
+
+  function appendUtf16data(utf16data, length) {
+    for (var i = 0; i < length; ++i) {
+      var value = readUint8();
+      if (value & 0x80) {
+        if (value < 0xe0) {
+          value = (value & 0x1f) <<  6
+                | (readUint8() & 0x3f);
+          length -= 1;
+        } else if (value < 0xf0) {
+          value = (value & 0x0f) << 12
+                | (readUint8() & 0x3f) << 6
+                | (readUint8() & 0x3f);
+          length -= 2;
+        } else {
+          value = (value & 0x0f) << 18
+                | (readUint8() & 0x3f) << 12
+                | (readUint8() & 0x3f) << 6
+                | (readUint8() & 0x3f);
+          length -= 3;
+        }
+      }
+
+      if (value < 0x10000) {
+        utf16data.push(value);
+      } else {
+        value -= 0x10000;
+        utf16data.push(0xd800 | (value >> 10));
+        utf16data.push(0xdc00 | (value & 0x3ff));
+      }
+    }
+  }
 
   function decodeItem() {
     var initialByte = readUint8();
@@ -255,23 +317,9 @@ function decode(data, tagger, simpleValue) {
       }
     }
 
-    switch (additionalInformation) {
-      case 24:
-        length = readUint8();
-        break;
-      case 25:
-        length = readUint16();
-        break;
-      case 26:
-        length = readUint32();
-        break;
-      case 27:
-        length = readUint64();
-        break;
-      default:
-        length = additionalInformation;
-        break;
-    }
+    length = readLength(additionalInformation);
+    if (length < 0 && (majorType < 2 || 6 < majorType))
+      throw "Invalid length";
 
     switch (majorType) {
       case 0:
@@ -279,47 +327,45 @@ function decode(data, tagger, simpleValue) {
       case 1:
         return -1 - length;
       case 2:
+        if (length < 0) {
+          var elements = [];
+          var fullArrayLength = 0;
+          while ((length = readIndefiniteStringLength(majorType)) >= 0) {
+            fullArrayLength += length;
+            elements.push(readArrayBuffer(length));
+          }
+          var fullArray = new Uint8Array(fullArrayLength);
+          var fullArrayOffset = 0;
+          for (i = 0; i < elements.length; ++i) {
+            fullArray.set(elements[i], fullArrayOffset);
+            fullArrayOffset += elements[i].length;
+          }
+          return fullArray;
+        }
         return readArrayBuffer(length);
       case 3:
         var utf16data = [];
-        for (i = 0; i < length; ++i) {
-          var value = readUint8();
-          if (value & 0x80) {
-            if (value < 0xe0) {
-              value = (value & 0x1f) <<  6
-                    | (readUint8() & 0x3f);
-              length -= 1;
-            } else if (value < 0xf0) {
-              value = (value & 0x0f) << 12
-                    | (readUint8() & 0x3f) << 6
-                    | (readUint8() & 0x3f);
-              length -= 2;
-            } else {
-              value = (value & 0x0f) << 18
-                    | (readUint8() & 0x3f) << 12
-                    | (readUint8() & 0x3f) << 6
-                    | (readUint8() & 0x3f);
-              length -= 3;
-            }
-          }
-          
-          if (value < 0x10000) {
-            utf16data.push(value);
-          } else {
-            value -= 0x10000;
-            utf16data.push(0xd800 | (value >> 10));
-            utf16data.push(0xdc00 | (value & 0x3ff));
-          }
-        }
+        if (length < 0) {
+          while ((length = readIndefiniteStringLength(majorType)) >= 0)
+            appendUtf16data(utf16data, length);
+        } else
+          appendUtf16data(utf16data, length);
         return String.fromCharCode.apply(null, utf16data);
       case 4:
-        var retArray = new Array(length);
-        for (i = 0; i < length; ++i)
-          retArray[i] = decodeItem();
+        var retArray;
+        if (length < 0) {
+          retArray = [];
+          while (!readBreak())
+            retArray.push(decodeItem());
+        } else {
+          retArray = new Array(length);
+          for (i = 0; i < length; ++i)
+            retArray[i] = decodeItem();
+        }
         return retArray;
       case 5:
         var retObject = {};
-        for (i = 0; i < length; ++i) {
+        for (i = 0; i < length || length < 0 && !readBreak(); ++i) {
           var key = decodeItem();
           retObject[key] = decodeItem();
         }
