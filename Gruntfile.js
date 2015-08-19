@@ -112,8 +112,9 @@ module.exports = function(grunt) {
           urls: ["http://localhost:" + testPort + "/" + testFile],
           build: process.env.TRAVIS_JOB_NUMBER || "unknown",
           browsers: browsers,
-          concurrency: 3,
-          tags: [process.env.TRAVIS_BRANCH || "unknown"]
+          statusCheckAttempts: -1,
+          tags: [process.env.TRAVIS_BRANCH || "unknown"],
+          throttled: 6
         }
       }
     }

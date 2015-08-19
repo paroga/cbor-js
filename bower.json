@@ -20,6 +20,6 @@
     "package.json"
   ],
   "devDependencies": {
-    "qunit": "1.14.0"
+    "qunit": "1.18.0"
   }
 }
