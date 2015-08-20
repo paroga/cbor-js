@@ -2,7 +2,8 @@ module.exports = function(grunt) {
   var browsers = [{
     browserName: "chrome"
   }, {
-    browserName: "firefox"
+    browserName: "firefox",
+    platform: "Windows 7"
   }, {
     browserName: "opera"
   }, {
@@ -15,8 +16,8 @@ module.exports = function(grunt) {
     version: "10"
   }, {
     browserName: "safari",
-    platform: "OS X 10.9",
-    version: "7"
+    platform: "OS X 10.10",
+    version: "8"
   }, {
     browserName: "safari",
     platform: "OS X 10.8",
@@ -34,13 +35,12 @@ module.exports = function(grunt) {
   }, {
     browserName: "android",
     platform: "linux",
-    version: "4.0",
+    version: "5.1",
     "device-orientation": "portrait"
   }, {
     browserName: "android",
     platform: "linux",
     version: "4.0",
-    "device-type": "tablet",
     "device-orientation": "portrait"
   }];
 
