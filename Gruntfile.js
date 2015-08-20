@@ -60,6 +60,20 @@ module.exports = function(grunt) {
         }
       }
     },
+    compress: {
+      all: {
+        options: {
+          archive: 'cbor-js.zip',
+          mode: 'zip'
+        },
+        files: [
+          { src: 'LICENSE' },
+          { src: 'README.md' },
+          { src: 'cbor.js' },
+          { src: 'cbor.min.js' }
+        ]
+      }
+    },
     connect: {
       server: {
         options: {
@@ -138,6 +152,7 @@ module.exports = function(grunt) {
   });
 
   grunt.loadNpmTasks("grunt-bower-install-simple");
+  grunt.loadNpmTasks("grunt-contrib-compress");
   grunt.loadNpmTasks("grunt-contrib-connect");
   grunt.loadNpmTasks("grunt-contrib-jshint");
   grunt.loadNpmTasks("grunt-contrib-qunit");
@@ -149,5 +164,5 @@ module.exports = function(grunt) {
   grunt.registerTask("default", ["test"]);
   grunt.registerTask("test", ["bower-install-simple", "qunit:src", "jshint"]);
   grunt.registerTask("test-min", ["bower-install-simple", "uglify", "qunit:min"]);
-  grunt.registerTask("ci", ["test", "coveralls", "test-min", "connect", "saucelabs-qunit"]);
+  grunt.registerTask("ci", ["test", "coveralls", "test-min", "connect", "saucelabs-qunit", "compress"]);
 };
