@@ -47,7 +47,9 @@ module.exports = function(grunt) {
   var covDirectory = "coverage";
   var srcFiles = ["cbor.js"];
   var testFile = "test/index.html";
+  var testFileMin = "test/index.min.html";
   var testPort = 9999;
+  var testBaseURL = "http://localhost:" + testPort + "/";
 
   grunt.initConfig({
     pkg: grunt.file.readJSON("package.json"),
@@ -92,7 +94,12 @@ module.exports = function(grunt) {
       all: srcFiles
     },
     qunit: {
-      all: {
+      min: {
+        options: {
+          urls: [testFileMin]
+        }
+      },
+      src: {
         options: {
           urls: [testFile],
           coverage: {
@@ -109,12 +116,22 @@ module.exports = function(grunt) {
     "saucelabs-qunit": {
       all: {
         options: {
-          urls: ["http://localhost:" + testPort + "/" + testFile],
+          urls: [testBaseURL + testFile, testBaseURL + testFileMin],
           build: process.env.TRAVIS_JOB_NUMBER || "unknown",
           browsers: browsers,
           statusCheckAttempts: -1,
           tags: [process.env.TRAVIS_BRANCH || "unknown"],
           throttled: 6
+        }
+      }
+    },
+    uglify: {
+      options: {
+        banner: "// <%= pkg.name %> v<%= pkg.version %> - <%= pkg.author %> - Licensed under <%= pkg.license %>\n"
+      },
+      all: {
+        files: {
+          "cbor.min.js": ["cbor.js"]
         }
       }
     }
@@ -124,11 +141,13 @@ module.exports = function(grunt) {
   grunt.loadNpmTasks("grunt-contrib-connect");
   grunt.loadNpmTasks("grunt-contrib-jshint");
   grunt.loadNpmTasks("grunt-contrib-qunit");
+  grunt.loadNpmTasks("grunt-contrib-uglify");
   grunt.loadNpmTasks("grunt-coveralls");
   grunt.loadNpmTasks("grunt-qunit-istanbul");
   grunt.loadNpmTasks("grunt-saucelabs");
 
   grunt.registerTask("default", ["test"]);
-  grunt.registerTask("test", ["bower-install-simple", "qunit", "jshint"]);
-  grunt.registerTask("ci", ["test", "coveralls", "connect", "saucelabs-qunit"]);
+  grunt.registerTask("test", ["bower-install-simple", "qunit:src", "jshint"]);
+  grunt.registerTask("test-min", ["bower-install-simple", "uglify", "qunit:min"]);
+  grunt.registerTask("ci", ["test", "coveralls", "test-min", "connect", "saucelabs-qunit"]);
 };
