@@ -27,6 +27,9 @@ var POW_2_24 = Math.pow(2, -24),
     POW_2_32 = Math.pow(2, 32),
     POW_2_53 = Math.pow(2, 53);
 
+var encoderRegistry = {};
+var decoderRegistry = {};
+
 function encode(value) {
   var data = new ArrayBuffer(256);
   var dataView = new DataView(data);
@@ -99,6 +102,18 @@ function encode(value) {
   
   function encodeItem(value) {
     var i;
+
+    for (i in encoderRegistry) {
+      if (!encoderRegistry.hasOwnProperty(i))
+        continue;
+
+      var encoder = encoderRegistry[i];
+      if (encoder.checker(value)) {
+        var handled = encoder.handler(value);
+        writeTypeAndLength(6, handled.tag);
+        return writeUint8Array(handled.value);
+      }
+    }
 
     if (value === false)
       return writeUint8(0xf4);
@@ -183,12 +198,10 @@ function encode(value) {
   return ret;
 }
 
-function decode(data, tagger, simpleValue) {
+function decode(data, simpleValue) {
   var dataView = new DataView(data);
   var offset = 0;
-  
-  if (typeof tagger !== "function")
-    tagger = function(value) { return value; };
+
   if (typeof simpleValue !== "function")
     simpleValue = function() { return undefined; };
 
@@ -371,7 +384,15 @@ function decode(data, tagger, simpleValue) {
         }
         return retObject;
       case 6:
-        return tagger(decodeItem(), length);
+        var taggedItem = decodeItem();
+        for (i in decoderRegistry) {
+          if (!decoderRegistry.hasOwnProperty(i))
+            continue;
+          var decoder = decoderRegistry[i];
+          if (decoder.checker(length))
+            return decoder.handler(taggedItem, length);
+        }
+        return taggedItem;
       case 7:
         switch (length) {
           case 20:
@@ -394,7 +415,72 @@ function decode(data, tagger, simpleValue) {
   return ret;
 }
 
-var obj = { encode: encode, decode: decode };
+function register(registry, handler, values, key, valueChecker) {
+  if (typeof handler !== "function")
+    throw new TypeError("First argument must be a function.");
+  values = values || handler[key];
+  if (!values)
+    throw new TypeError("Second argument is missing.");
+
+  var checker = null;
+  if (typeof values === "function")
+    checker = values;
+  else {
+    if (!Array.isArray(values))
+      values = [values];
+    checker = function(obj) {
+      for (var i = 0; i < values.length; ++i) {
+        if (valueChecker(obj, values[i]))
+          return true;
+      }
+      return false;
+    };
+  }
+
+  var id = 0;
+  while (id in registry)
+    ++id;
+  registry[id] = {
+    checker: checker,
+    handler: handler
+  };
+  return id;
+}
+
+function registerDecoder(handler, tags) {
+  return register(decoderRegistry, handler, tags, "tags", function(obj, item) {
+    return obj === item;
+  });
+}
+
+function registerEncoder(handler, types) {
+  return register(encoderRegistry, handler, types, "types", function(obj, item) {
+    return obj instanceof item;
+  });
+}
+
+function unregister(registry, id) {
+  if (!(id in registry))
+    throw new Error("Unknown item");
+  delete registry[id];
+}
+
+function unregisterDecoder(id) {
+  return unregister(decoderRegistry, id);
+}
+
+function unregisterEncoder(id) {
+  return unregister(encoderRegistry, id);
+}
+
+var obj = {
+  encode: encode,
+  decode: decode,
+  registerDecoder: registerDecoder,
+  registerEncoder: registerEncoder,
+  unregisterDecoder: unregisterDecoder,
+  unregisterEncoder: unregisterEncoder
+};
 
 if (typeof define === "function" && define.amd)
   define("cbor/cbor", obj);

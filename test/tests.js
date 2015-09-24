@@ -392,6 +392,18 @@ function myDeepEqual(actual, expected, text) {
   return deepEqual(actual, expected, text);
 }
 
+function arrayBuffer2hex(data) {
+  var uint8data = new Uint8Array(data);
+  var ret = "";
+  for (var i = 0; i < uint8data.length; ++i) {
+    var number = uint8data[i].toString(16);
+    if (number.length !== 2)
+      ret += "0";
+    ret += number;
+  }
+  return ret;
+}
+
 function hex2arrayBuffer(data) {
   var length = data.length / 2;
   var ret = new Uint8Array(length);
@@ -484,28 +496,136 @@ test("Invalid indefinite length element length", function() {
   ok(threw, "Thrown exception");
 });
 
-test("Tagging", function() {
+test("(un)registerDecoder", function() {
+  var threw = false;
+  try {
+    CBOR.registerDecoder(123);
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw, "Thrown exception without function");
+
+  threw = false;
+  try {
+    CBOR.registerDecoder(function() {});
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw, "Thrown exception without tags");
+
+  var decoder1 = function() {};
+  var id1 = CBOR.registerDecoder(decoder1, 0x12);
+  ok(id1 !== undefined, "Registered decoder with extra argument");
+
+  var decoder2 = function() {};
+  decoder2.tags = 0x34;
+  var id2 = CBOR.registerDecoder(decoder2);
+  ok(id2 !== undefined, "Registered decoder with property");
+
+  CBOR.unregisterDecoder(id1);
+  CBOR.unregisterDecoder(id2);
+
+  threw = false;
+  try {
+    CBOR.unregisterDecoder(id1);
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw, "Thrown exception with invalid registerd id");
+});
+
+test("(un)registerEncoder", function() {
+  var threw = false;
+  try {
+    CBOR.registerEncoder(123);
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw, "Thrown exception without function");
+
+  threw = false;
+  try {
+    CBOR.registerEncoder(function() {});
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw, "Thrown exception without tags");
+
+  var decoder1 = function() {};
+  var id1 = CBOR.registerEncoder(decoder1, 0x12);
+  ok(id1 !== undefined, "Registered encoder with extra argument");
+
+  var decoder2 = function() {};
+  decoder2.types = Error;
+  var id2 = CBOR.registerEncoder(decoder2);
+  ok(id2 !== undefined, "Registered encoder with property");
+
+  CBOR.unregisterEncoder(id1);
+  CBOR.unregisterEncoder(id2);
+
+  threw = false;
+  try {
+    CBOR.unregisterEncoder(id1);
+  } catch (e) {
+    threw = e;
+  }
+  ok(threw, "Thrown exception with invalid registerd id");
+});
+
+test("Decode tags", function() {
   function TaggedValue(value, tag) {
     this.value = value;
     this.tag = tag;
   }
-  function SimpleValue(value) {
-    this.value = value;
-  }
 
-  var arrayBuffer = hex2arrayBuffer("83d81203d9456708f8f0");
-  var decoded = CBOR.decode(arrayBuffer, function(value, tag) {
+  var arrayBuffer = hex2arrayBuffer("83d81203d9456708d8aa05");
+  var decoderId = CBOR.registerDecoder(function(value, tag) {
     return new TaggedValue(value, tag);
-  }, function(value) {
-    return new SimpleValue(value);
-  });
-  
+  }, [0x12, 0xf0, 0x4567]);
+  var decoded = CBOR.decode(arrayBuffer);
+  CBOR.unregisterDecoder(decoderId);
+
   ok(decoded[0] instanceof TaggedValue, "first item is a TaggedValue");
   equal(decoded[0].value, 3, "first item value");
   equal(decoded[0].tag, 0x12, "first item tag");
   ok(decoded[1] instanceof TaggedValue, "second item is a TaggedValue");
   equal(decoded[1].value, 8, "second item value");
   equal(decoded[1].tag, 0x4567, "second item tag");
-  ok(decoded[2] instanceof SimpleValue, "third item is a SimpleValue");
-  equal(decoded[2].value, 0xf0, "third item tag");
+  ok(decoded[2] === 5, "third item is a number");
+});
+
+test("Encode tags", function() {
+  function TaggedValue(value, tag) {
+    this.value = value;
+    this.tag = tag;
+  }
+
+  var decoded = [
+    new TaggedValue(new Uint8Array(3), 0x12),
+    [],
+    {},
+    new TaggedValue(new Uint8Array(2), 0x4567)
+  ];
+
+  var encoderId = CBOR.registerEncoder(function(value) {
+    return value;
+  }, [TaggedValue]);
+  var encoded = arrayBuffer2hex(CBOR.encode(decoded));
+  CBOR.unregisterEncoder(encoderId);
+
+  ok(encoded === "84d200000080a0d945670000", "correct encoding");
+});
+
+test("SimpleValue", function() {
+  function SimpleValue(value) {
+    this.value = value;
+  }
+
+  var arrayBuffer = hex2arrayBuffer("f8f0");
+  var decoded = CBOR.decode(arrayBuffer, function(value) {
+    return new SimpleValue(value);
+  });
+
+  ok(decoded instanceof SimpleValue, "third item is a SimpleValue");
+  equal(decoded.value, 0xf0, "third item tag");
 });
