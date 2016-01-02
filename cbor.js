@@ -23,9 +23,9 @@
  */
 
 (function(global, undefined) { "use strict";
-var POW_2_24 = Math.pow(2, -24),
-    POW_2_32 = Math.pow(2, 32),
-    POW_2_53 = Math.pow(2, 53);
+var POW_2_24 = 5.960464477539063e-8,
+    POW_2_32 = 4294967296,
+    POW_2_53 = 9007199254740992;
 
 function encode(value) {
   var data = new ArrayBuffer(256);
