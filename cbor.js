@@ -164,6 +164,9 @@ function encode(value) {
           writeTypeAndLength(5, length);
           for (i = 0; i < length; ++i) {
             var key = keys[i];
+            // Less pretty code to avoid one more parseInt call
+            var numKey = parseInt(key);
+            if (numKey !== NaN) key = numKey;
             encodeItem(key);
             encodeItem(value[key]);
           }
