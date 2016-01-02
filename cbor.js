@@ -37,14 +37,14 @@ function encode(value) {
     var newByteLength = data.byteLength;
     var requiredLength = offset + length;
     while (newByteLength < requiredLength)
-      newByteLength *= 2;
+      newByteLength = newByteLength << 1;
     if (newByteLength !== data.byteLength) {
       var oldDataView = dataView;
       data = new ArrayBuffer(newByteLength);
       dataView = new DataView(data);
       var uint32count = (offset + 3) >> 2;
       for (var i = 0; i < uint32count; ++i)
-        dataView.setUint32(i * 4, oldDataView.getUint32(i * 4));
+        dataView.setUint32(i << 2, oldDataView.getUint32(i << 2));
     }
 
     lastLength = length;
