@@ -166,7 +166,7 @@ function encode(value) {
             var key = keys[i];
             // Less pretty code to avoid one more parseInt call
             var numKey = parseInt(key);
-            if (numKey !== NaN) key = numKey;
+            if (!isNaN(numKey)) key = numKey;
             encodeItem(key);
             encodeItem(value[key]);
           }
