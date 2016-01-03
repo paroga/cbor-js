@@ -23,9 +23,9 @@
  */
 
 (function(global, undefined) { "use strict";
-var POW_2_24 = Math.pow(2, -24),
-    POW_2_32 = Math.pow(2, 32),
-    POW_2_53 = Math.pow(2, 53);
+var POW_2_24 = 5.960464477539063e-8,
+    POW_2_32 = 4294967296,
+    POW_2_53 = 9007199254740992;
 
 function encode(value) {
   var data = new ArrayBuffer(256);
@@ -37,14 +37,14 @@ function encode(value) {
     var newByteLength = data.byteLength;
     var requiredLength = offset + length;
     while (newByteLength < requiredLength)
-      newByteLength *= 2;
+      newByteLength = newByteLength << 1;
     if (newByteLength !== data.byteLength) {
       var oldDataView = dataView;
       data = new ArrayBuffer(newByteLength);
       dataView = new DataView(data);
       var uint32count = (offset + 3) >> 2;
       for (var i = 0; i < uint32count; ++i)
-        dataView.setUint32(i * 4, oldDataView.getUint32(i * 4));
+        dataView.setUint32(i << 2, oldDataView.getUint32(i << 2));
     }
 
     lastLength = length;
@@ -96,7 +96,7 @@ function encode(value) {
       writeUint64(length);
     }
   }
-  
+
   function encodeItem(value) {
     var i;
 
@@ -108,7 +108,7 @@ function encode(value) {
       return writeUint8(0xf6);
     if (value === undefined)
       return writeUint8(0xf7);
-  
+
     switch (typeof value) {
       case "number":
         if (Math.floor(value) === value) {
@@ -164,18 +164,21 @@ function encode(value) {
           writeTypeAndLength(5, length);
           for (i = 0; i < length; ++i) {
             var key = keys[i];
+            // Less pretty code to avoid one more parseInt call
+            var numKey = parseInt(key);
+            if (!isNaN(numKey)) key = numKey;
             encodeItem(key);
             encodeItem(value[key]);
           }
         }
     }
   }
-  
+
   encodeItem(value);
 
   if ("slice" in data)
     return data.slice(0, offset);
-  
+
   var ret = new ArrayBuffer(offset);
   var retView = new DataView(ret);
   for (var i = 0; i < offset; ++i)
@@ -186,7 +189,7 @@ function encode(value) {
 function decode(data, tagger, simpleValue) {
   var dataView = new DataView(data);
   var offset = 0;
-  
+
   if (typeof tagger !== "function")
     tagger = function(value) { return value; };
   if (typeof simpleValue !== "function")
@@ -207,14 +210,14 @@ function decode(data, tagger, simpleValue) {
     var sign = value & 0x8000;
     var exponent = value & 0x7c00;
     var fraction = value & 0x03ff;
-    
+
     if (exponent === 0x7c00)
       exponent = 0xff << 10;
     else if (exponent !== 0)
       exponent += (127 - 15) << 10;
     else if (fraction !== 0)
       return fraction * POW_2_24;
-    
+
     tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
     return tempDataView.getFloat32(0);
   }
@@ -389,8 +392,25 @@ function decode(data, tagger, simpleValue) {
   }
 
   var ret = decodeItem();
+
+  // In a keyless serialization, the recursion chain never happens and
+  // stops parsing at the first element. This isn't meant to be a pretty
+  // fix, but the least intrusive workaround without reworking everything.
+
+  if (typeof ret !== "object" && offset !== data.byteLength) {
+    var j = 0;
+    var retP = {};
+    retP[j++] = ret;
+
+    while (offset !== data.byteLength)
+      retP[j++] = decodeItem();
+
+    return retP;
+  }
+
   if (offset !== data.byteLength)
     throw "Remaining bytes";
+
   return ret;
 }
 
