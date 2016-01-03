@@ -397,7 +397,7 @@ function decode(data, tagger, simpleValue) {
   // stops parsing at the first element. This isn't meant to be a pretty
   // fix, but the least intrusive workaround without reworking everything.
 
-  if (typeof ret !== 'object' && offset !== data.byteLength) {
+  if (typeof ret !== "object" && offset !== data.byteLength) {
     var j = 0;
     var retP = {};
     retP[j++] = ret;
