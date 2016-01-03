@@ -431,7 +431,7 @@ test("Big Array", function() {
 test("Remaining Bytes", function() {
   var threw = false;
   try {
-    var arrayBuffer = new ArrayBuffer(2);
+    var arrayBuffer = new Uint8Array([0,26,0,18]).buffer;
     CBOR.decode(arrayBuffer)
   } catch (e) {
     threw = e;
