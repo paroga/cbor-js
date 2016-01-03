@@ -392,8 +392,25 @@ function decode(data, tagger, simpleValue) {
   }
 
   var ret = decodeItem();
+
+  // In a keyless serialization, the recursion chain never happens and
+  // stops parsing at the first element. This isn't meant to be a pretty
+  // fix, but the least intrusive workaround without reworking everything.
+
+  if (typeof ret !== 'object' && offset !== data.byteLength) {
+    var j = 0;
+    var retP = {};
+    retP[j++] = ret;
+
+    while (offset !== data.byteLength)
+      retP[j++] = decodeItem();
+
+    return retP;
+  }
+
   if (offset !== data.byteLength)
     throw "Remaining bytes";
+
   return ret;
 }
 
