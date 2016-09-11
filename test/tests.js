@@ -425,19 +425,51 @@ test("Big Array", function() {
   var value = new Array(0x10001);
   for (var i = 0; i < value.length; ++i)
     value[i] = i;
-  deepEqual(CBOR.decode(CBOR.encode(value)), value, 'deepEqual')
+  deepEqual(CBOR.decode(CBOR.encode(value)), value, 'deepEqual');
 });
 
-test("Remaining Bytes", function() {
+test("Remaining Bytes Throws", function() {
   var threw = false;
   try {
     var arrayBuffer = new Uint8Array([0,26,0,18]).buffer;
-    CBOR.decode(arrayBuffer)
+    CBOR.decode(arrayBuffer);
   } catch (e) {
     threw = e;
   }
 
   ok(threw, "Thrown exception");
+});
+
+test("No Remaining Bytes 1", function() {
+  var threw = false;
+  var expected = {
+      "cookie": {
+      "path": "/",
+      "_expires": null,
+      "originalMaxAge": null,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": true
+    },
+    "passport": {
+      "user": "ya29.Ci9bA7ax9WxhPwJcLPLSKEx6Q5kjgUr0huhR1MAVG-8ivzjVXpKwGc94tb-8bDOW3g"
+    },
+    "__lastAccess": 1473628668402
+  };
+
+  var decoded = false;
+
+  var arrayBuffer = hex2arrayBuffer(
+    'a366636f6f6b6965a66470617468612f685f65787069726573f66e6f72696769' +
+    '6e616c4d6178416765f668687474704f6e6c79f566736563757265f56873616d' +
+    '6553697465f56870617373706f7274a164757365727847796132392e43693962' +
+    '413761783957786850774a634c504c534b45783651356b6a6755723068756852' +
+    '314d4156472d3869767a6a5658704b774763393474622d3862444f5733676c5f' +
+    '5f6c6173744163636573731b000001571b1d01f2');
+
+  decoded = CBOR.decode(arrayBuffer);
+
+  deepEqual(decoded, expected, "Got expected result");
 });
 
 test("Invalid length encoding", function() {
