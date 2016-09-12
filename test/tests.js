@@ -415,6 +415,7 @@ function arrayBufferToHex(encoded) {
 
 for (var i = 0; i < testcases.length; ++i) {
   try {
+    //noinspection ExceptionCaughtLocallyJS
     throw testcases[i];
   }
   catch (testcase) {
@@ -469,7 +470,6 @@ for (var i = 0; i < testcases.length; ++i) {
     });
   }
 }
-;
 
 test("Big Array", function () {
   var value = new Array(0x10001);
@@ -488,6 +488,20 @@ test("Remaining Bytes Throws", function () {
   }
 
   ok(threw, "Thrown exception");
+});
+
+
+test("Remaining Bytes Does Not Throw When Opted", function () {
+  var threw = false;
+  try {
+    var arrayBuffer = new Uint8Array([0xa1, 0x61, 0x61, 0x01, 0x00, 0x00, 0x00, 0x00]).buffer;
+    var result = CBOR.decode(arrayBuffer,null,null,{allowRemainingBytes:true});
+    myDeepEqual(result, {a:1}, "Result is clean")
+  } catch (e) {
+    threw = e;
+  }
+
+  notOk(threw, "Thrown exception");
 });
 
 test("No Remaining Bytes 1", function () {

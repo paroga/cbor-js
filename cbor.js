@@ -24,9 +24,9 @@
 
 (function (global, undefined) {
   "use strict";
-  var POW_2_24 = 5.960464477539063e-8,
-    POW_2_32 = 4294967296,
-    POW_2_53 = 9007199254740992;
+  //var POW_2_24 = 5.960464477539063e-8;
+  var POW_2_32 = 4294967296;
+  var POW_2_53 = 9007199254740992;
 
   function decodeFloat16(value) {
     var exponent = (value & 0x7C00) >> 10,
@@ -42,7 +42,7 @@
       );
   }
 
-  function encode(value, options) {
+  function encode(value/*, options*/) {
     //console.log("Beginning encoding...");
     var data;
     var encodeView;
@@ -53,31 +53,31 @@
       var newByteLength = data.byteLength;
       var requiredLength = offset + length;
       if (newByteLength < requiredLength)
-        throw new Error('Not enough space allocated during accounting pass.');
+        throw new Error("Not enough space allocated during accounting pass.");
       lastLength = length;
       return encodeView;
     }
 
     function commitWrite(view, value) {
       if (value === undefined)
-        throw new Error('value is not specified!');
+        throw new Error("value is not specified!");
       //console.log("wrote", value, offset, lastLength);
       offset += lastLength;
     }
 
-    var fx_floatView = new Float32Array(1);
-    var fx_int32View = new Int32Array(fx_floatView.buffer);
+    var singleFloatView = new Float32Array(1);
+    var singleIntView = new Int32Array(singleFloatView.buffer);
 
     function checkFloat32(value) {
-      fx_floatView[0] = value;
-      var xf = fx_floatView[0];
+      singleFloatView[0] = value;
+      var xf = singleFloatView[0];
       // skip NaN check, should be encoded as float 16
-      return xf === value ? fx_int32View[0] : false;
+      return xf === value ? singleIntView[0] : false;
     }
 
     function getFloat16(value) {
-      fx_floatView[0] = value;
-      var fbits = fx_int32View[0];
+      singleFloatView[0] = value;
+      var fbits = singleIntView[0];
 
       var sign = (fbits >> 16) & 0x8000;          // sign only
       var val = ( fbits & 0x7fffffff ) + 0x1000; // rounded value
@@ -100,8 +100,8 @@
         return sign;                        // becomes +/-0
       }
       val = ( fbits & 0x7fffffff ) >> 23;   // tmp exp for subnormal calc
-      return sign | ( ( fbits & 0x7fffff | 0x800000 ) // add subnormal bit
-        + ( 0x800000 >>> val - 102 )     // round depending on cut off
+      return sign | ( ( fbits & 0x7fffff | 0x800000 ) + // add subnormal bit
+        ( 0x800000 >>> val - 102 )       // round depending on cut off
         >> 126 - val );                  // div by 2^(1-(exp-127+15)) and >> 13 | exp=0
     }
 
@@ -116,10 +116,12 @@
       commitWrite(prepareWrite(2).setUint16(offset, getFloat16(value)), value);
     }
 
+    /*
     function writeFloat32(value) {
       writeUint8(0xfa);
       commitWrite(prepareWrite(4).setFloat32(offset, value), value);
     }
+    */
 
     function writeFloat64(value) {
       writeUint8(0xfb);
@@ -183,34 +185,35 @@
       commitWrite(undefined, value);
     }
 
-    function accountForTypeAndLength(type, length) {
-      if (length < 24) {
-        return 1;
-      } else if (length < 0x100) {
-        return 2;
-      } else if (length < 0x10000) {
-        return 3;
-      } else if (length < 0x100000000) {
-        return 5;
-      } else {
-        return 9;
-      }
+    function accountForTypeAndLength(length) {
+      /* jshint laxbreak:true */
+      return length < 24
+        ? 1
+        : length < 0x100
+          ? 2
+          : length < 0x10000
+            ? 3
+            : length < 0x100000000
+            ? 5
+            : 9;
+      /* jshint laxbreak:false */
     }
 
     function writeTypeAndLength(type, length) {
+      var typeCode = type << 5;
       if (length < 24) {
-        writeUint8(type << 5 | length);
+        writeUint8(typeCode | length);
       } else if (length < 0x100) {
-        writeUint8(type << 5 | 0x18);
+        writeUint8(typeCode | 0x18);
         writeUint8(length);
       } else if (length < 0x10000) {
-        writeUint8(type << 5 | 0x19);
+        writeUint8(typeCode | 0x19);
         writeUint16(length);
       } else if (length < 0x100000000) {
-        writeUint8(type << 5 | 0x1A);
+        writeUint8(typeCode | 0x1A);
         writeUint32(length);
       } else {
-        writeUint8(type << 5 | 0x1B);
+        writeUint8(typeCode | 0x1B);
         writeUint64(length);
       }
     }
@@ -235,7 +238,7 @@
 
     function accountForUtf8String(value) {
       var c = getByteLengthOfUtf8String(value);
-      return accountForTypeAndLength(3, c) + c;
+      return accountForTypeAndLength(c) + c;
     }
 
     function writeUtf8String(value) {
@@ -299,9 +302,9 @@
             return 3;
           if (Math.floor(value) === value) {
             if (0 <= value && value <= POW_2_53)
-              return accountForTypeAndLength(0, value);
+              return accountForTypeAndLength(value);
             if (-POW_2_53 <= value && value < 0)
-              return accountForTypeAndLength(1, -(value + 1));
+              return accountForTypeAndLength(-(value + 1));
           }
           return accountForFloat(value);
 
@@ -312,22 +315,22 @@
           var length;
           if (Array.isArray(value)) {
             length = value.length;
-            c += accountForTypeAndLength(4, length);
+            c += accountForTypeAndLength(length);
             for (i = 0; i < length; ++i)
               c += accountForItem(value[i]);
           } else if (value instanceof Uint8Array) {
-            c += accountForTypeAndLength(2, value.length);
+            c += accountForTypeAndLength(value.length);
             c += value.length;
           } else {
             var keys = Object.keys(value);
             length = keys.length;
-            c += accountForTypeAndLength(5, length);
+            c += accountForTypeAndLength(length);
             for (i = 0; i < length; ++i) {
               var key = keys[i];
               var firstChar = key.charCodeAt(0);
               var firstCharIsNum = firstChar >= 48 && firstChar <= 57;
               var numKey = firstCharIsNum && parseInt(key, 10);
-              if (!isNaN(numKey) && key == numKey)
+              if (!isNaN(numKey) && key === numKey)
                 key = numKey;
               c += accountForItem(key);
               c += accountForItem(value[key]);
@@ -386,7 +389,7 @@
               var firstChar = key.charCodeAt(0);
               var firstCharIsNum = firstChar >= 48 && firstChar <= 57;
               var numKey = firstCharIsNum && parseInt(key, 10);
-              if (!isNaN(numKey) && key == numKey)
+              if (!isNaN(numKey) && key === numKey)
                 key = numKey;
               encodeItem(key);
               encodeItem(value[key]);
@@ -478,6 +481,7 @@
       return commitRead(4, decodeView.getUint32(offset));
     }
 
+
     function readUint64() {
       return readUint32() * POW_2_32 + readUint32();
     }
@@ -491,19 +495,24 @@
 
     function readLength(additionalInformation) {
       //console.log("reading length for ...", additionalInformation);
-      if (additionalInformation < 24)
-        return additionalInformation;
-      if (additionalInformation === 24)
-        return readUint8();
-      if (additionalInformation === 25)
-        return readUint16();
-      if (additionalInformation === 26)
-        return readUint32();
-      if (additionalInformation === 27)
-        return readUint64();
-      if (additionalInformation === 31)
-        return -1;
-      throw "Invalid length encoding";
+      /* jshint laxbreak:true */
+      var r = additionalInformation < 24
+        ? additionalInformation
+        : additionalInformation === 24
+          ? readUint8()
+          : additionalInformation === 25
+            ? readUint16()
+            : additionalInformation === 26
+              ? readUint32()
+              : additionalInformation === 27
+                ? readUint64()
+                : additionalInformation === 31
+                  ? -1
+                  : false;
+      /* jshint laxbreak:false */
+      if ( r === false )
+        throw new Error("Invalid length encoding");
+      return r;
     }
 
     function readStringLength(majorType) {
@@ -512,7 +521,7 @@
         return -1;
       var length = readLength(initialByte & 0x1f);
       if (length < 0 || (initialByte >> 5) !== majorType)
-        throw "Invalid indefinite length element";
+        throw new Error("Invalid indefinite length element");
       return length;
     }
 
@@ -572,7 +581,7 @@
 
       length = readLength(additionalInformation);
       if (length < 0 && (majorType < 2 || 6 < majorType))
-        throw "Invalid length";
+        throw new Error("Invalid length");
 
       switch (majorType) {
         case 0:
@@ -611,9 +620,9 @@
             //console.log("exactly "+length+" bytes");
             appendUtf16Data(utf16data, length);
           }
-          var str = String.fromCharCode.apply(null, utf16data);
+          var newStr = String.fromCharCode.apply(null, utf16data);
           //console.log("read string...", str);
-          return str;
+          return newStr;
         case 4:
           var retArray;
           if (length < 0) {
@@ -648,9 +657,11 @@
             default:
               return simpleValue(length);
           }
+          // this shuts jshint up, but all control flow is accounted for; bug?
+          break;
         default: {
-          throw new Error('Unhandled identifier ' + initialByte
-            + ' with major type code ' + majorType);
+          throw new Error("Unhandled identifier " + initialByte +
+            " with major type code " + majorType);
         }
       }
     }
