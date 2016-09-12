@@ -33,7 +33,7 @@ function encode(value) {
   var lastLength;
   var offset = 0;
 
-  function ensureSpace(length) {
+  function prepareWrite(length) {
     var newByteLength = data.byteLength;
     var requiredLength = offset + length;
     while (newByteLength < requiredLength)
@@ -50,34 +50,34 @@ function encode(value) {
     lastLength = length;
     return dataView;
   }
-  function write() {
+  function commitWrite() {
     offset += lastLength;
   }
   function writeFloat64(value) {
-    write(ensureSpace(8).setFloat64(offset, value));
+    commitWrite(prepareWrite(8).setFloat64(offset, value));
   }
   function writeUint8(value) {
-    write(ensureSpace(1).setUint8(offset, value));
+    commitWrite(prepareWrite(1).setUint8(offset, value));
   }
   function writeUint8Array(value) {
-    var dataView = ensureSpace(value.length);
+    var dataView = prepareWrite(value.length);
     for (var i = 0; i < value.length; ++i)
       dataView.setUint8(offset + i, value[i]);
-    write();
+    commitWrite();
   }
   function writeUint16(value) {
-    write(ensureSpace(2).setUint16(offset, value));
+    commitWrite(prepareWrite(2).setUint16(offset, value));
   }
   function writeUint32(value) {
-    write(ensureSpace(4).setUint32(offset, value));
+    commitWrite(prepareWrite(4).setUint32(offset, value));
   }
   function writeUint64(value) {
     var low = value % POW_2_32;
     var high = (value - low) / POW_2_32;
-    var dataView = ensureSpace(8);
+    var dataView = prepareWrite(8);
     dataView.setUint32(offset, high);
     dataView.setUint32(offset + 4, low);
-    write();
+    commitWrite();
   }
   function writeTypeAndLength(type, length) {
     if (length < 24) {
@@ -195,12 +195,12 @@ function decode(data, tagger, simpleValue) {
   if (typeof simpleValue !== "function")
     simpleValue = function() { return undefined; };
 
-  function read(value, length) {
+  function commitRead(length, value) {
     offset += length;
     return value;
   }
   function readArrayBuffer(length) {
-    return read(new Uint8Array(data, offset, length), length);
+    return commitRead(length, new Uint8Array(data, offset, length));
   }
   function readFloat16() {
     var tempArrayBuffer = new ArrayBuffer(4);
@@ -222,19 +222,19 @@ function decode(data, tagger, simpleValue) {
     return tempDataView.getFloat32(0);
   }
   function readFloat32() {
-    return read(dataView.getFloat32(offset), 4);
+    return commitRead(4, dataView.getFloat32(offset));
   }
   function readFloat64() {
-    return read(dataView.getFloat64(offset), 8);
+    return commitRead(8, dataView.getFloat64(offset));
   }
   function readUint8() {
-    return read(dataView.getUint8(offset), 1);
+    return commitRead(1, dataView.getUint8(offset));
   }
   function readUint16() {
-    return read(dataView.getUint16(offset), 2);
+    return commitRead(2, dataView.getUint16(offset));
   }
   function readUint32() {
-    return read(dataView.getUint32(offset), 4);
+    return commitRead(4, dataView.getUint32(offset));
   }
   function readUint64() {
     return readUint32() * POW_2_32 + readUint32();
@@ -270,7 +270,7 @@ function decode(data, tagger, simpleValue) {
     return length;
   }
 
-  function appendUtf16data(utf16data, length) {
+  function appendUtf16Data(utf16data, length) {
     for (var i = 0; i < length; ++i) {
       var value = readUint8();
       if (value & 0x80) {
@@ -350,9 +350,9 @@ function decode(data, tagger, simpleValue) {
         var utf16data = [];
         if (length < 0) {
           while ((length = readIndefiniteStringLength(majorType)) >= 0)
-            appendUtf16data(utf16data, length);
+            appendUtf16Data(utf16data, length);
         } else
-          appendUtf16data(utf16data, length);
+          appendUtf16Data(utf16data, length);
         return String.fromCharCode.apply(null, utf16data);
       case 4:
         var retArray;
