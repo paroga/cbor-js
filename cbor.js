@@ -49,7 +49,7 @@
     var lastLength = 0;
     var offset = 0;
 
-    function ensureSpace(length) {
+    function prepareWrite(length) {
       var newByteLength = data.byteLength;
       var requiredLength = offset + length;
       if (newByteLength < requiredLength)
@@ -58,7 +58,7 @@
       return encodeView;
     }
 
-    function write(view, value) {
+    function commitWrite(view, value) {
       if (value === undefined)
         throw new Error('value is not specified!');
       //console.log("wrote", value, offset, lastLength);
@@ -113,17 +113,17 @@
 
     function writeFloat16(value) {
       writeUint8(0xf9);
-      write(ensureSpace(2).setUint16(offset, getFloat16(value)), value);
+      commitWrite(prepareWrite(2).setUint16(offset, getFloat16(value)), value);
     }
 
     function writeFloat32(value) {
       writeUint8(0xfa);
-      write(ensureSpace(4).setFloat32(offset, value), value);
+      commitWrite(prepareWrite(4).setFloat32(offset, value), value);
     }
 
     function writeFloat64(value) {
       writeUint8(0xfb);
-      write(ensureSpace(8).setFloat64(offset, value), value);
+      commitWrite(prepareWrite(8).setFloat64(offset, value), value);
     }
 
     function accountForFloat(value) {
@@ -142,13 +142,13 @@
       var f16 = checkFloat16(value);
       if (f16 !== false) {
         writeUint8(0xf9);
-        write(ensureSpace(2).setUint16(offset, f16), value);
+        commitWrite(prepareWrite(2).setUint16(offset, f16), value);
         return;
       }
       var f32 = checkFloat32(value);
       if (f32 !== false) {
         writeUint8(0xfa);
-        write(ensureSpace(4).setUint32(offset, f32), value);
+        commitWrite(prepareWrite(4).setUint32(offset, f32), value);
         return;
       }
       //writeUint8(0xfb);
@@ -156,22 +156,22 @@
     }
 
     function writeUint8(value) {
-      write(ensureSpace(1).setUint8(offset, value), value);
+      commitWrite(prepareWrite(1).setUint8(offset, value), value);
     }
 
     function writeUint8Array(value) {
-      //var encodeView = ensureSpace(value.length);
+      prepareWrite(value.length);
       for (var i = 0; i < value.length; ++i)
         encodeView.setUint8(offset + i, value[i]);
-      write(undefined, value);
+      commitWrite(undefined, value);
     }
 
     function writeUint16(value) {
-      write(ensureSpace(2).setUint16(offset, value), value);
+      commitWrite(prepareWrite(2).setUint16(offset, value), value);
     }
 
     function writeUint32(value) {
-      write(ensureSpace(4).setUint32(offset, value), value);
+      commitWrite(prepareWrite(4).setUint32(offset, value), value);
     }
 
     function writeUint64(value) {
@@ -180,7 +180,7 @@
       //var encodeView = ensureSpace(8);
       encodeView.setUint32(offset, high);
       encodeView.setUint32(offset + 4, low);
-      write(undefined, value);
+      commitWrite(undefined, value);
     }
 
     function accountForTypeAndLength(type, length) {
@@ -240,33 +240,43 @@
 
     function writeUtf8String(value) {
       var utf8len = getByteLengthOfUtf8String(value);
+      //console.log("Writing string "+value+" at offset "+offset+" in "+utf8len+" bytes");
+      //if (value.length > utf8len)
+      //  throw new Error("Incorrect string length accounting: Can not write less bytes than characters.");
+      //if (value.length < utf8len)
+      //  console.log("Writing "+ value.length + " chars in "+ utf8len +" bytes\nString: "+ value);
       var utf8data = new Uint8Array(utf8len);
-      var offset = 0;
+      var charIndex = 0;
       for (i = 0; i < value.length; ++i) {
         var charCode = value.charCodeAt(i);
         if (charCode < 0x80) {
-          utf8data[offset++] = charCode;
+          //console.log("Writing " + charCode.toString(16) + " in 1 byte");
+          utf8data[charIndex++] = charCode;
         } else if (charCode < 0x800) {
-          utf8data[offset++] = (0xc0 | charCode >> 6);
-          utf8data[offset++] = (0x80 | charCode & 0x3f);
+          //console.log("Writing " + charCode.toString(16) + " in 2 bytes");
+          utf8data[charIndex++] = (0xc0 | charCode >> 6);
+          utf8data[charIndex++] = (0x80 | charCode & 0x3f);
         } else if (charCode < 0xd800) {
-          utf8data[offset++] = (0xe0 | charCode >> 12);
-          utf8data[offset++] = (0x80 | (charCode >> 6) & 0x3f);
-          utf8data[offset++] = (0x80 | charCode & 0x3f);
+          //console.log("Writing " + charCode.toString(16) + " in 3 bytes");
+          utf8data[charIndex++] = (0xe0 | charCode >> 12);
+          utf8data[charIndex++] = (0x80 | (charCode >> 6) & 0x3f);
+          utf8data[charIndex++] = (0x80 | charCode & 0x3f);
         } else {
+          var charCode2 = value.charCodeAt(++i);
+          //console.log("Writing " + charCode.toString(16) + " and "+charCode2.toString(16)+ " in 4 bytes");
           charCode = (charCode & 0x3ff) << 10;
-          charCode |= value.charCodeAt(++i) & 0x3ff;
+          charCode |= charCode2 & 0x3ff;
           charCode += 0x10000;
 
-          utf8data[offset++] = (0xf0 | charCode >> 18);
-          utf8data[offset++] = (0x80 | (charCode >> 12) & 0x3f);
-          utf8data[offset++] = (0x80 | (charCode >> 6) & 0x3f);
-          utf8data[offset++] = (0x80 | charCode & 0x3f);
+          utf8data[charIndex++] = (0xf0 | charCode >> 18);
+          utf8data[charIndex++] = (0x80 | (charCode >> 12) & 0x3f);
+          utf8data[charIndex++] = (0x80 | (charCode >> 6) & 0x3f);
+          utf8data[charIndex++] = (0x80 | charCode & 0x3f);
         }
       }
-      if (offset != utf8len)
-        throw new Error("Incorrect string length accounting: " +
-          offset + " vs " + utf8len + ", difference of " + (utf8len - offset));
+      //if (charIndex != utf8len)
+      //  throw new Error("Incorrect string length accounting: " +
+      //    charIndex + " vs " + utf8len + ", difference of " + (utf8len - charIndex));
       writeTypeAndLength(3, utf8len);
       return writeUint8Array(utf8data);
     }
@@ -414,14 +424,14 @@
         return undefined;
       };
 
-    function read(value, length) {
+    function commitRead(length, value) {
       offset += length;
       //console.log("read", value);
       return value;
     }
 
     function readArrayBuffer(length) {
-      return read(new Uint8Array(data, offset, length), length);
+      return commitRead(length, new Uint8Array(data, offset, length));
     }
 
 
@@ -449,23 +459,23 @@
     }
 
     function readFloat32() {
-      return read(decodeView.getFloat32(offset), 4);
+      return commitRead(4, decodeView.getFloat32(offset));
     }
 
     function readFloat64() {
-      return read(decodeView.getFloat64(offset), 8);
+      return commitRead(8, decodeView.getFloat64(offset));
     }
 
     function readUint8() {
-      return read(decodeView.getUint8(offset), 1);
+      return commitRead(1, decodeView.getUint8(offset));
     }
 
     function readUint16() {
-      return read(decodeView.getUint16(offset), 2);
+      return commitRead(2, decodeView.getUint16(offset));
     }
 
     function readUint32() {
-      return read(decodeView.getUint32(offset), 4);
+      return commitRead(4, decodeView.getUint32(offset));
     }
 
     function readUint64() {
@@ -496,7 +506,7 @@
       throw "Invalid length encoding";
     }
 
-    function readIndefiniteStringLength(majorType) {
+    function readStringLength(majorType) {
       var initialByte = readUint8();
       if (initialByte === 0xff)
         return -1;
@@ -506,7 +516,7 @@
       return length;
     }
 
-    function appendUtf16data(utf16data, length) {
+    function appendUtf16Data(utf16data, length) {
       for (var i = 0; i < length; ++i) {
         var value = readUint8();
         var highBit = value & 0x80;
@@ -564,7 +574,6 @@
       if (length < 0 && (majorType < 2 || 6 < majorType))
         throw "Invalid length";
 
-      //console.log("decoding major type other than float...", majorType, additionalInformation);
       switch (majorType) {
         case 0:
           //console.log("read uint " + length)
@@ -576,7 +585,7 @@
           if (length < 0) {
             var elements = [];
             var fullArrayLength = 0;
-            while ((length = readIndefiniteStringLength(majorType)) >= 0) {
+            while ((length = readStringLength(majorType)) >= 0) {
               fullArrayLength += length;
               elements.push(readArrayBuffer(length));
             }
@@ -590,13 +599,21 @@
           }
           return readArrayBuffer(length);
         case 3:
+          //console.log("decoding string at "+offset+" 0x"+ initialByte.toString(16));
           var utf16data = [];
           if (length < 0) {
-            while ((length = readIndefiniteStringLength(majorType)) >= 0)
-              appendUtf16data(utf16data, length);
-          } else
-            appendUtf16data(utf16data, length);
-          return String.fromCharCode.apply(null, utf16data);
+            //console.log("indefinite length");
+            while ((length = readStringLength(majorType)) >= 0) {
+              //console.log("chunk of "+length+" bytes");
+              appendUtf16Data(utf16data, length);
+            }
+          } else {
+            //console.log("exactly "+length+" bytes");
+            appendUtf16Data(utf16data, length);
+          }
+          var str = String.fromCharCode.apply(null, utf16data);
+          //console.log("read string...", str);
+          return str;
         case 4:
           var retArray;
           if (length < 0) {
