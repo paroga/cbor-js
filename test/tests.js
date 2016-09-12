@@ -1,11 +1,11 @@
-var testcases = function(undefined) {
+var testcases = function (undefined) {
   function generateArrayBuffer(data) {
     var ret = new ArrayBuffer(data.length);
     var uintArray = new Uint8Array(ret);
     for (var i = 0; i < data.length; ++i) {
       uintArray[i] = data[i];
     }
-    return new Uint8Array(data);  
+    return new Uint8Array(data);
   }
 
   return [
@@ -114,11 +114,11 @@ var testcases = function(undefined) {
     ], [
       "Bytestring [1,2,3,4]",
       "4401020304",
-      generateArrayBuffer([1,2,3,4])
+      generateArrayBuffer([1, 2, 3, 4])
     ], [
       "Bytestring [1,2,3,4,5]",
       "5f42010243030405ff",
-      generateArrayBuffer([1,2,3,4,5]),
+      generateArrayBuffer([1, 2, 3, 4, 5]),
       true
     ], [
       "String ''",
@@ -282,7 +282,7 @@ var testcases = function(undefined) {
       "Float16 1.5",
       "f93e00",
       1.5,
-      true
+      false
     ], [
       "Float16 65504.0",
       "f97bff",
@@ -292,12 +292,12 @@ var testcases = function(undefined) {
       "Float16 5.960464477539063e-8",
       "f90001",
       5.960464477539063e-8,
-      true
+      false
     ], [
       "Float16 0.00006103515625",
       "f90400",
       0.00006103515625,
-      true
+      false
     ], [
       "Float16 -4.0",
       "f9c400",
@@ -366,7 +366,8 @@ var testcases = function(undefined) {
     ], [
       "Float64 +Infinity",
       "fb7ff0000000000000",
-      Infinity
+      Infinity,
+      true
     ], [
       "Float64 NaN",
       "fb7ff8000000000000",
@@ -375,8 +376,9 @@ var testcases = function(undefined) {
     ], [
       "Float64 -Infinity",
       "fbfff0000000000000",
-      -Infinity
-    ] ];
+      -Infinity,
+      true
+    ]];
 }();
 
 function myDeepEqual(actual, expected, text) {
@@ -392,7 +394,7 @@ function myDeepEqual(actual, expected, text) {
   return deepEqual(actual, expected, text);
 }
 
-function hex2arrayBuffer(data) {
+function hexToArrayBuffer(data) {
   var length = data.length / 2;
   var ret = new Uint8Array(length);
   for (var i = 0; i < length; ++i) {
@@ -400,38 +402,86 @@ function hex2arrayBuffer(data) {
   }
   return ret.buffer;
 }
+function arrayBufferToHex(encoded) {
+  var hex = "";
+  var uint8Array = new Uint8Array(encoded);
+  for (var i = 0; i < uint8Array.length; ++i) {
+    var byte = uint8Array[i];
+    hex += (byte >> 4).toString(16);
+    hex += (byte & 0xf).toString(16);
+  }
+  return hex;
+}
 
-testcases.forEach(function(testcase) {
-  var name = testcase[0];
-  var data = testcase[1];
-  var expected = testcase[2];
-  var binaryDifference = testcase[3];
+for (var i = 0; i < testcases.length; ++i) {
+  try {
+    throw testcases[i];
+  }
+  catch (testcase) {
+    //var testcase = testcases[i];
+    test(testcase[0], function () {
+      var name = testcase[0];
+      var data = testcase[1];
+      var expected = testcase[2];
+      var binaryDifference = testcase[3];
+      //console.log("Test ", name);
+      var decoded, encoded, decodedEncoded;
+      try {
+        //console.log("Decoding data... "+data);
+        decoded = CBOR.decode(hexToArrayBuffer(data));
+      } catch (err) {
+        console.error("Error on test: " + name);
+        console.error("Expected: " + data);
+        console.error("Resulted: " + hex);
+        console.error("While decoding data...\n" + err.stack);
+        throw err;
+      }
+      myDeepEqual(decoded, expected, "Decoding");
+      //console.log("decoded data was as expected");
+      try {
+        //console.log("Encoding data...");
+        encoded = CBOR.encode(expected);
+      } catch (err) {
+        console.error("Error on test: " + name);
+        console.error("Expected: " + data);
+        console.error("Resulted: " + hex);
+        console.error("While encoding data...\n" + err.stack);
+        throw err;
+      }
+      var hex = arrayBufferToHex(encoded);
+      if (!binaryDifference) {
+        equal(hex, data, "Encoding difference (byteMatch)");
+        //console.log("encoded data was as expected "+hex);
+      } else {
+        //console.log("encoded data was "+hex);
+      }
+      try {
+        //console.log("Decoding the encoded data...");
+        decodedEncoded = CBOR.decode(encoded);
+      } catch (err) {
+        console.error("Error on test: " + name);
+        console.error("Expected: " + data);
+        console.error("Resulted: " + hex);
+        console.error("While decoding the encoded data...\n" + err.stack);
+        throw err;
+      }
+      myDeepEqual(decodedEncoded, expected, "Encoding (deepEqual)");
+    });
+  }
+}
+;
 
-  test(name, function() {
-    myDeepEqual(CBOR.decode(hex2arrayBuffer(data)), expected, "Decoding");
-    var encoded = CBOR.encode(expected);
-    myDeepEqual(CBOR.decode(encoded), expected, "Encoding (deepEqual)");
-    if (!binaryDifference) {
-      var hex = "";
-      var uint8Array = new Uint8Array(encoded);
-      for (var i = 0; i < uint8Array.length; ++i)
-        hex += (uint8Array[i] < 0x10 ? "0" : "") + uint8Array[i].toString(16);
-      equal(hex, data, "Encoding (byteMatch)");
-    }
-  });
-});
-
-test("Big Array", function() {
+test("Big Array", function () {
   var value = new Array(0x10001);
   for (var i = 0; i < value.length; ++i)
     value[i] = i;
   deepEqual(CBOR.decode(CBOR.encode(value)), value, 'deepEqual');
 });
 
-test("Remaining Bytes Throws", function() {
+test("Remaining Bytes Throws", function () {
   var threw = false;
   try {
-    var arrayBuffer = new Uint8Array([0,26,0,18]).buffer;
+    var arrayBuffer = new Uint8Array([0, 26, 0, 18]).buffer;
     CBOR.decode(arrayBuffer);
   } catch (e) {
     threw = e;
@@ -440,10 +490,10 @@ test("Remaining Bytes Throws", function() {
   ok(threw, "Thrown exception");
 });
 
-test("No Remaining Bytes 1", function() {
+test("No Remaining Bytes 1", function () {
   var threw = false;
   var expected = {
-      "cookie": {
+    "cookie": {
       "path": "/",
       "_expires": null,
       "originalMaxAge": null,
@@ -459,7 +509,7 @@ test("No Remaining Bytes 1", function() {
 
   var decoded = false;
 
-  var arrayBuffer = hex2arrayBuffer(
+  var arrayBuffer = hexToArrayBuffer(
     'a366636f6f6b6965a66470617468612f685f65787069726573f66e6f72696769' +
     '6e616c4d6178416765f668687474704f6e6c79f566736563757265f56873616d' +
     '6553697465f56870617373706f7274a164757365727847796132392e43693962' +
@@ -472,10 +522,10 @@ test("No Remaining Bytes 1", function() {
   deepEqual(decoded, expected, "Got expected result");
 });
 
-test("Invalid length encoding", function() {
+test("Invalid length encoding", function () {
   var threw = false;
   try {
-    CBOR.decode(hex2arrayBuffer("1e"))
+    CBOR.decode(hexToArrayBuffer("1e"))
   } catch (e) {
     threw = e;
   }
@@ -483,10 +533,10 @@ test("Invalid length encoding", function() {
   ok(threw, "Thrown exception");
 });
 
-test("Invalid length", function() {
+test("Invalid length", function () {
   var threw = false;
   try {
-    CBOR.decode(hex2arrayBuffer("1f"))
+    CBOR.decode(hexToArrayBuffer("1f"))
   } catch (e) {
     threw = e;
   }
@@ -494,10 +544,10 @@ test("Invalid length", function() {
   ok(threw, "Thrown exception");
 });
 
-test("Invalid indefinite length element type", function() {
+test("Invalid indefinite length element type", function () {
   var threw = false;
   try {
-    CBOR.decode(hex2arrayBuffer("5f00"))
+    CBOR.decode(hexToArrayBuffer("5f00"))
   } catch (e) {
     threw = e;
   }
@@ -505,10 +555,10 @@ test("Invalid indefinite length element type", function() {
   ok(threw, "Thrown exception");
 });
 
-test("Invalid indefinite length element length", function() {
+test("Invalid indefinite length element length", function () {
   var threw = false;
   try {
-    CBOR.decode(hex2arrayBuffer("5f5f"))
+    CBOR.decode(hexToArrayBuffer("5f5f"))
   } catch (e) {
     threw = e;
   }
@@ -516,22 +566,23 @@ test("Invalid indefinite length element length", function() {
   ok(threw, "Thrown exception");
 });
 
-test("Tagging", function() {
+test("Tagging", function () {
   function TaggedValue(value, tag) {
     this.value = value;
     this.tag = tag;
   }
+
   function SimpleValue(value) {
     this.value = value;
   }
 
-  var arrayBuffer = hex2arrayBuffer("83d81203d9456708f8f0");
-  var decoded = CBOR.decode(arrayBuffer, function(value, tag) {
+  var arrayBuffer = hexToArrayBuffer("83d81203d9456708f8f0");
+  var decoded = CBOR.decode(arrayBuffer, function (value, tag) {
     return new TaggedValue(value, tag);
-  }, function(value) {
+  }, function (value) {
     return new SimpleValue(value);
   });
-  
+
   ok(decoded[0] instanceof TaggedValue, "first item is a TaggedValue");
   equal(decoded[0].value, 3, "first item value");
   equal(decoded[0].tag, 0x12, "first item tag");
