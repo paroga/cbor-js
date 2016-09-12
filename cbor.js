@@ -217,7 +217,7 @@
 
     function getByteLengthOfUtf8String(value) {
       var c = 0;
-      for (i = 0; i < value.length; ++i) {
+      for (var i = 0; i < value.length; ++i) {
         var charCode = value.charCodeAt(i);
         if (charCode < 0x80) {
           c += 1;
