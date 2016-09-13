@@ -22,11 +22,19 @@
  * SOFTWARE.
  */
 
+//noinspection ThisExpressionReferencesGlobalObjectJS
 (function (global, undefined) {
   "use strict";
   //var POW_2_24 = 5.960464477539063e-8;
   var POW_2_32 = 4294967296;
   var POW_2_53 = 9007199254740992;
+
+  var singleFloatView = new Float32Array(1);
+  var singleIntView = new Uint32Array(singleFloatView.buffer);
+
+  function isNumericChar(char) {
+    return char >= 48 && char <= 57;
+  }
 
   function decodeFloat16(value) {
     var exponent = (value & 0x7C00) >> 10,
@@ -42,6 +50,171 @@
       );
   }
 
+  function checkFloat32(value) {
+    singleFloatView[0] = value;
+    var xf = singleFloatView[0];
+    // skip NaN check, should be encoded as float 16
+    return xf === value ? singleIntView[0] : false;
+  }
+
+  function getFloat16(value) {
+    singleFloatView[0] = value;
+    var fbits = singleIntView[0];
+
+
+    /* fast but dirty, causes test failures
+    return (
+     ((fbits>>16)&0x8000)|
+     ((((fbits&0x7f800000)-0x38000000)>>13)&0x7c00)|
+     ((fbits>>13)&0x03ff)
+    );
+    */
+
+
+    var sign = ( fbits >> 16 ) & 0x8000;          // sign only
+    var exponentAndMantissa = fbits & 0x7fffffff;
+    var val = ( exponentAndMantissa ) + 0x1000; // rounded value
+
+    if (val >= 0x47800000) {
+      /* jshint laxbreak:true */
+      return val < 0x7f800000
+        ? sign | 0x7c00
+        : sign | 0x7c00 | ( fbits & 0x007fffff ) >> 13;
+      /* jshint laxbreak:false */
+    }
+
+
+    if (val >= 0x38800000) {             // remains normalized value
+      return sign | val - 0x38000000 >> 13; // exp - 127 + 15
+    }
+
+    if (val < 0x33000000) {             // too small for subnormal
+      return sign;                        // becomes +/-0
+    }
+    
+    val = ( exponentAndMantissa ) >> 23;   // tmp exp for subnormal calc
+    return sign | ( ( fbits & 0x7fffff | 0x800000 ) + // add subnormal bit
+      ( 0x800000 >>> val - 102 )       // round depending on cut off
+      >> 126 - val );                  // div by 2^(1-(exp-127+15)) and >> 13 | exp=0
+  }
+
+  function checkFloat16(value) {
+    var data = getFloat16(value);
+    var decoded = decodeFloat16(data);
+    return decoded === value || isNaN(decoded) && isNaN(value) ? data : false;
+  }
+
+  function getByteLengthOfUtf8String(value) {
+    var c = 0;
+    for (var i = 0; i < value.length; ++i) {
+      var charCode = value.charCodeAt(i);
+      if (charCode < 0x80) {
+        c += 1;
+      } else if (charCode < 0x800) {
+        c += 2;
+      } else if (charCode < 0xd800) {
+        c += 3;
+      } else {
+        ++i;
+        c += 4;
+      }
+    }
+    return c;
+  }
+
+  function accountForFloat(value) {
+    var f16 = checkFloat16(value);
+    if (f16 !== false) {
+      return 3;
+    }
+    var f32 = checkFloat32(value);
+    if (f32 !== false) {
+      return 5;
+    }
+    return 9;
+  }
+
+  function accountForTypeAndLength(length) {
+    /* jshint laxbreak:true */
+    return length < 24
+      ? 1
+      : length < 0x100
+        ? 2
+        : length < 0x10000
+          ? 3
+          : length < 0x100000000
+            ? 5
+            : 9;
+    /* jshint laxbreak:false */
+  }
+
+  function accountForUtf8String(value) {
+    var c = getByteLengthOfUtf8String(value);
+    return accountForTypeAndLength(c) + c;
+  }
+
+  function maybeIntKey(key) {
+    var isNumKey = isNumericChar(key.charCodeAt(0));
+    for (var ki = 1; isNumKey && ki < key.length; ++ki)
+      isNumKey = isNumericChar(key.charCodeAt(ki));
+    if (isNumKey)
+      key = parseInt(key, 10);
+    return key;
+  }
+
+  function accountForItem(value) {
+    var i;
+    var c = 0;
+    if (value === false)
+      return 1;
+    if (value === true)
+      return 1;
+    if (value === null)
+      return 1;
+    if (value === undefined)
+      return 1;
+
+    switch (typeof value) {
+      case "number":
+        if (isNaN(value))
+          return 3;
+        if (Math.floor(value) === value) {
+          if (0 <= value && value <= POW_2_53)
+            return accountForTypeAndLength(value);
+          if (-POW_2_53 <= value && value < 0)
+            return accountForTypeAndLength(-(value + 1));
+        }
+        return accountForFloat(value);
+
+      case "string":
+        return accountForUtf8String(value);
+
+      default:
+        var length;
+        if (Array.isArray(value)) {
+          length = value.length;
+          c += accountForTypeAndLength(length);
+          for (i = 0; i < length; ++i)
+            c += accountForItem(value[i]);
+        } else if (value instanceof Uint8Array) {
+          c += accountForTypeAndLength(value.length);
+          c += value.length;
+        } else {
+          var keys = Object.keys(value);
+          length = keys.length;
+          c += accountForTypeAndLength(length);
+          for (i = 0; i < length; ++i) {
+            var key = maybeIntKey(keys[i]);
+            c += accountForItem(key);
+            c += accountForItem(value[key]);
+          }
+        }
+    }
+
+    return c;
+  }
+
+
   function encode(value/*, options*/) {
     //console.log("Beginning encoding...");
     var data;
@@ -50,107 +223,51 @@
     var offset = 0;
 
     function prepareWrite(length) {
-      var newByteLength = data.byteLength;
-      var requiredLength = offset + length;
-      if (newByteLength < requiredLength)
-        throw new Error("Not enough space allocated during accounting pass.");
+      //var newByteLength = data.byteLength;
+      //var requiredLength = offset + length;
+      //if (newByteLength < requiredLength)
+      //  throw new Error("Not enough space allocated during accounting pass.");
       lastLength = length;
       return encodeView;
     }
 
-    function commitWrite(view, value) {
-      if (value === undefined)
-        throw new Error("value is not specified!");
-      //console.log("wrote", value, offset, lastLength);
+    function commitWrite() {
       offset += lastLength;
-    }
-
-    var singleFloatView = new Float32Array(1);
-    var singleIntView = new Int32Array(singleFloatView.buffer);
-
-    function checkFloat32(value) {
-      singleFloatView[0] = value;
-      var xf = singleFloatView[0];
-      // skip NaN check, should be encoded as float 16
-      return xf === value ? singleIntView[0] : false;
-    }
-
-    function getFloat16(value) {
-      singleFloatView[0] = value;
-      var fbits = singleIntView[0];
-
-      var sign = (fbits >> 16) & 0x8000;          // sign only
-      var val = ( fbits & 0x7fffffff ) + 0x1000; // rounded value
-
-      if (val >= 0x47800000) {             // might be or become NaN/Inf
-        if (( fbits & 0x7fffffff ) >= 0x47800000) {
-          // is or must become NaN/Inf
-          if (val < 0x7f800000) {          // was value but too large
-            return sign | 0x7c00;           // make it +/-Inf
-          }
-          return sign | 0x7c00 |            // remains +/-Inf or NaN
-            ( fbits & 0x007fffff ) >> 13; // keep NaN (and Inf) bits
-        }
-        return sign | 0x7bff;               // unrounded not quite Inf
-      }
-      if (val >= 0x38800000) {             // remains normalized value
-        return sign | val - 0x38000000 >> 13; // exp - 127 + 15
-      }
-      if (val < 0x33000000) {             // too small for subnormal
-        return sign;                        // becomes +/-0
-      }
-      val = ( fbits & 0x7fffffff ) >> 23;   // tmp exp for subnormal calc
-      return sign | ( ( fbits & 0x7fffff | 0x800000 ) + // add subnormal bit
-        ( 0x800000 >>> val - 102 )       // round depending on cut off
-        >> 126 - val );                  // div by 2^(1-(exp-127+15)) and >> 13 | exp=0
-    }
-
-    function checkFloat16(value) {
-      var data = getFloat16(value);
-      var decoded = decodeFloat16(data);
-      return decoded === value || isNaN(decoded) && isNaN(value) ? data : false;
     }
 
     function writeFloat16(value) {
       writeUint8(0xf9);
-      commitWrite(prepareWrite(2).setUint16(offset, getFloat16(value)), value);
+      prepareWrite(2).setUint16(offset, getFloat16(value));
+      commitWrite();
     }
 
     /*
     function writeFloat32(value) {
       writeUint8(0xfa);
-      commitWrite(prepareWrite(4).setFloat32(offset, value), value);
+     prepareWrite(4).setFloat32(offset, value);
+      commitWrite();
     }
     */
 
     function writeFloat64(value) {
       writeUint8(0xfb);
-      commitWrite(prepareWrite(8).setFloat64(offset, value), value);
-    }
-
-    function accountForFloat(value) {
-      var f16 = checkFloat16(value);
-      if (f16 !== false) {
-        return 3;
-      }
-      var f32 = checkFloat32(value);
-      if (f32 !== false) {
-        return 5;
-      }
-      return 9;
+      prepareWrite(8).setFloat64(offset, value);
+      commitWrite();
     }
 
     function writeFloat(value) {
       var f16 = checkFloat16(value);
       if (f16 !== false) {
         writeUint8(0xf9);
-        commitWrite(prepareWrite(2).setUint16(offset, f16), value);
+        prepareWrite(2).setUint16(offset, f16);
+        commitWrite();
         return;
       }
       var f32 = checkFloat32(value);
       if (f32 !== false) {
         writeUint8(0xfa);
-        commitWrite(prepareWrite(4).setUint32(offset, f32), value);
+        prepareWrite(4).setUint32(offset, f32);
+        commitWrite();
         return;
       }
       //writeUint8(0xfb);
@@ -158,45 +275,33 @@
     }
 
     function writeUint8(value) {
-      commitWrite(prepareWrite(1).setUint8(offset, value), value);
+      prepareWrite(1).setUint8(offset, value);
+      commitWrite();
     }
 
     function writeUint8Array(value) {
-      prepareWrite(value.length);
+      var v = prepareWrite(value.length);
       for (var i = 0; i < value.length; ++i)
-        encodeView.setUint8(offset + i, value[i]);
-      commitWrite(undefined, value);
+        v.setUint8(offset + i, value[i]);
+      commitWrite();
     }
 
     function writeUint16(value) {
-      commitWrite(prepareWrite(2).setUint16(offset, value), value);
+      prepareWrite(2).setUint16(offset, value);
+      commitWrite();
     }
 
     function writeUint32(value) {
-      commitWrite(prepareWrite(4).setUint32(offset, value), value);
+      prepareWrite(4).setUint32(offset, value);
+      commitWrite();
     }
 
     function writeUint64(value) {
       var low = value % POW_2_32;
       var high = (value - low) / POW_2_32;
-      //var encodeView = ensureSpace(8);
       encodeView.setUint32(offset, high);
       encodeView.setUint32(offset + 4, low);
-      commitWrite(undefined, value);
-    }
-
-    function accountForTypeAndLength(length) {
-      /* jshint laxbreak:true */
-      return length < 24
-        ? 1
-        : length < 0x100
-          ? 2
-          : length < 0x10000
-            ? 3
-            : length < 0x100000000
-            ? 5
-            : 9;
-      /* jshint laxbreak:false */
+      commitWrite();
     }
 
     function writeTypeAndLength(type, length) {
@@ -216,29 +321,6 @@
         writeUint8(typeCode | 0x1B);
         writeUint64(length);
       }
-    }
-
-    function getByteLengthOfUtf8String(value) {
-      var c = 0;
-      for (var i = 0; i < value.length; ++i) {
-        var charCode = value.charCodeAt(i);
-        if (charCode < 0x80) {
-          c += 1;
-        } else if (charCode < 0x800) {
-          c += 2;
-        } else if (charCode < 0xd800) {
-          c += 3;
-        } else {
-          ++i;
-          c += 4;
-        }
-      }
-      return c;
-    }
-
-    function accountForUtf8String(value) {
-      var c = getByteLengthOfUtf8String(value);
-      return accountForTypeAndLength(c) + c;
     }
 
     function writeUtf8String(value) {
@@ -282,63 +364,6 @@
       //    charIndex + " vs " + utf8len + ", difference of " + (utf8len - charIndex));
       writeTypeAndLength(3, utf8len);
       return writeUint8Array(utf8data);
-    }
-
-    function accountForItem(value) {
-      var i;
-      var c = 0;
-      if (value === false)
-        return 1;
-      if (value === true)
-        return 1;
-      if (value === null)
-        return 1;
-      if (value === undefined)
-        return 1;
-
-      switch (typeof value) {
-        case "number":
-          if (isNaN(value))
-            return 3;
-          if (Math.floor(value) === value) {
-            if (0 <= value && value <= POW_2_53)
-              return accountForTypeAndLength(value);
-            if (-POW_2_53 <= value && value < 0)
-              return accountForTypeAndLength(-(value + 1));
-          }
-          return accountForFloat(value);
-
-        case "string":
-          return accountForUtf8String(value);
-
-        default:
-          var length;
-          if (Array.isArray(value)) {
-            length = value.length;
-            c += accountForTypeAndLength(length);
-            for (i = 0; i < length; ++i)
-              c += accountForItem(value[i]);
-          } else if (value instanceof Uint8Array) {
-            c += accountForTypeAndLength(value.length);
-            c += value.length;
-          } else {
-            var keys = Object.keys(value);
-            length = keys.length;
-            c += accountForTypeAndLength(length);
-            for (i = 0; i < length; ++i) {
-              var key = keys[i];
-              var firstChar = key.charCodeAt(0);
-              var firstCharIsNum = firstChar >= 48 && firstChar <= 57;
-              var numKey = firstCharIsNum && parseInt(key, 10);
-              if (!isNaN(numKey) && key === numKey)
-                key = numKey;
-              c += accountForItem(key);
-              c += accountForItem(value[key]);
-            }
-          }
-      }
-
-      return c;
     }
 
     function encodeItem(value) {
@@ -385,12 +410,7 @@
             length = keys.length;
             writeTypeAndLength(5, length);
             for (i = 0; i < length; ++i) {
-              var key = keys[i];
-              var firstChar = key.charCodeAt(0);
-              var firstCharIsNum = firstChar >= 48 && firstChar <= 57;
-              var numKey = firstCharIsNum && parseInt(key, 10);
-              if (!isNaN(numKey) && key === numKey)
-                key = numKey;
+              var key = maybeIntKey(keys[i]);
               encodeItem(key);
               encodeItem(value[key]);
             }
@@ -406,6 +426,62 @@
     //console.log("Finished encoding...", data.byteLength);
     return data;
   }
+/*
+  var maybeStringDecoderLib = "require" in global ? require("string_decoder") : false;
+  var utf8TextDecoder = "TextDecoder" in global ? new TextDecoder("utf-8") : false;
+  var utf8StringDecoder = "StringDecoder" in global ? new StringDecoder("utf8") : maybeStringDecoderLib ? new maybeStringDecoderLib.StringDecoder("utf8") : false;
+
+  function utf8DecodeStreamStringDecoder(ab) {
+    utf8StringDecoder.write(Buffer.from(ab));
+    return "";
+  }
+
+  function utf8DecodeStreamTextDecoder(ab) {
+    return utf8TextDecoder.decode(ab, {stream: true});
+  }
+
+  var utf8DecodeStream = utf8TextDecoder ? utf8DecodeStreamTextDecoder : utf8StringDecoder ? utf8DecodeStreamStringDecoder : false;
+
+  function utf8DecodeFinishStringDecoder(ab) {
+    return utf8StringDecoder.end(Buffer.from(ab));
+  }
+
+  function utf8DecodeFinishTextDecoder(ab) {
+    return utf8TextDecoder.decode(ab, {stream: false});
+  }
+
+  var utf8DecodeFinish = utf8TextDecoder ? utf8DecodeFinishTextDecoder : utf8StringDecoder ? utf8DecodeFinishStringDecoder : false;
+
+  function utf8DecodeWholeStringDecoder(ab) {
+    //return Buffer.from(ab).toString('utf8');
+    utf8StringDecoder.end(Buffer.allocUnsafe(0));
+    return utf8StringDecoder.end(Buffer.from(ab));
+  }
+
+  function utf8DecodeWholeTextDecoder(ab) {
+    utf8TextDecoder.decode(new ArrayBuffer(0), {stream: false});
+    return utf8TextDecoder.decode(ab, {stream: false});
+  }
+
+  var utf8DecodeWhole = utf8TextDecoder ? utf8DecodeWholeTextDecoder : utf8StringDecoder ? utf8DecodeWholeStringDecoder : false;
+
+  function testStringDecoder() {
+    var ab1 = new ArrayBuffer([32]);
+    var ab2 = new ArrayBuffer([32,32]);
+    return (
+      (utf8DecodeStreamStringDecoder(ab1) + utf8DecodeFinishStringDecoder(ab2)) === "   " &&
+      utf8DecodeWholeStringDecoder(ab2) === "  "
+    );
+  }
+  function testTextDecoder() {
+    var ab1 = new ArrayBuffer([32]);
+    var ab2 = new ArrayBuffer([32,32]);
+    return (
+      (utf8DecodeTextStringDecoder(ab1) + utf8DecodeFinishTextDecoder(ab2)) === "   " &&
+      utf8DecodeWholeTextDecoder(ab2) === "  "
+    );
+  }
+  */
 
   function decode(data, tagger, simpleValue, options) {
     if (!data)
@@ -439,25 +515,6 @@
 
 
     function readFloat16() {
-      /*
-       var tempArrayBuffer = new ArrayBuffer(4);
-       var tempDataView = new DataView(tempArrayBuffer);
-       var value = readUint16();
-
-       var sign = value & 0x8000;
-       var exponent = value & 0x7c00;
-       var fraction = value & 0x03ff;
-
-       if (exponent === 0x7c00)
-       exponent = 0xff << 10;
-       else if (exponent !== 0)
-       exponent += (127 - 15) << 10;
-       else if (fraction !== 0)
-       return fraction * POW_2_24;
-
-       tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
-       return tempDataView.getFloat32(0);
-       */
       return decodeFloat16(readUint16());
     }
 
@@ -510,7 +567,7 @@
                   ? -1
                   : false;
       /* jshint laxbreak:false */
-      if ( r === false )
+      if (r === false)
         throw new Error("Invalid length encoding");
       return r;
     }
@@ -525,7 +582,25 @@
       return length;
     }
 
-    function appendUtf16Data(utf16data, length) {
+
+    //function appendChars(newStr, length, stream) {
+    function appendChars(newStr, length) {
+      /*
+      if (!cbor.options.useJsFallbackUtf8) {
+        //console.log("Using native utf8 codec");
+        var decoded;
+        if (stream === true)
+          decoded = utf8DecodeStream(readArrayBuffer(length));
+        if (stream === false)
+          decoded = utf8DecodeFinish(readArrayBuffer(length));
+        else
+          decoded = utf8DecodeWhole(readArrayBuffer(length));
+        if (newStr.length === 0)
+          return decoded;
+        return newStr + decoded;
+      }
+      */
+      //console.log("Using js utf8 codec");
       for (var i = 0; i < length; ++i) {
         var value = readUint8();
         var highBit = value & 0x80;
@@ -548,14 +623,27 @@
           }
         }
 
+        /*
+        if (!cbor.options.useJsFallbackCodePt) {
+          //console.log("Using native utf8 code point");
+          newStr += String.fromCodePoint(value);
+          return newStr;
+        }
+         */
         if (value < 0x10000) {
-          utf16data.push(value);
+          //console.log("Using js utf8 code point");
+          //newStr.push(value);
+          newStr += String.fromCharCode(value);
         } else {
           value -= 0x10000;
-          utf16data.push(0xd800 | (value >> 10));
-          utf16data.push(0xdc00 | (value & 0x3ff));
+          newStr += String.fromCharCode(
+            (0xd800 | (value >> 10)),
+            (0xdc00 | (value & 0x3ff)));
+          //newStr.push(0xd800 | (value >> 10));
+          //newStr.push(0xdc00 | (value & 0x3ff));
         }
       }
+      return newStr;
     }
 
     function decodeItem() {
@@ -566,7 +654,6 @@
       var additionalInformation = initialByte & 0x1f;
       var i;
       var length;
-
       if (majorType === 7) {
         //console.log("decoding float...", additionalInformation);
         switch (additionalInformation) {
@@ -584,7 +671,8 @@
         throw new Error("Invalid length");
 
       switch (majorType) {
-        case 0:
+        default:
+        //case 0:
           //console.log("read uint " + length)
           return length;
         case 1:
@@ -609,19 +697,19 @@
           return readArrayBuffer(length);
         case 3:
           //console.log("decoding string at "+offset+" 0x"+ initialByte.toString(16));
-          var utf16data = [];
+          var newStr = "";
           if (length < 0) {
             //console.log("indefinite length");
             while ((length = readStringLength(majorType)) >= 0) {
               //console.log("chunk of "+length+" bytes");
-              appendUtf16Data(utf16data, length);
+              //newStr = appendChars(newStr, length, true);
+              newStr = appendChars(newStr, length);
             }
+            //newStr = appendChars(newStr, 0, false);
           } else {
             //console.log("exactly "+length+" bytes");
-            appendUtf16Data(utf16data, length);
+            newStr = appendChars(newStr, length);
           }
-          var newStr = String.fromCharCode.apply(null, utf16data);
-          //console.log("read string...", str);
           return newStr;
         case 4:
           var retArray;
@@ -657,13 +745,14 @@
             default:
               return simpleValue(length);
           }
-          // this shuts jshint up, but all control flow is accounted for; bug?
-          break;
-        default: {
-          throw new Error("Unhandled identifier " + initialByte +
-            " with major type code " + majorType);
-        }
       }
+      /*
+      console.log("initial byte: "+initialByte);
+      console.log("major type: "+majorType);
+      console.log("additional information: "+additionalInformation);
+      throw new Error("Unhandled identifier " + initialByte + " with major type code " + majorType);
+      */
+      // not possible
     }
 
     var ret = decodeItem();
@@ -691,11 +780,20 @@
     return ret;
   }
 
-  var obj = {encode: encode, decode: decode};
-
+  var cbor = {
+    encode: encode, decode: decode, options: {
+      /*
+      useJsFallbackUtf8: !("TextDecoder" in global || "StringDecoder" in global),
+      useJsFallbackCodePt: !("fromCodePoint" in String)
+      */
+    }/*, tests: [
+      testStringDecoder,
+      testTextDecoder
+    ]*/
+  };
   if (typeof define === "function" && define.amd)
-    define("cbor/cbor", obj);
+    define("cbor/cbor", cbor);
   else if (!global.CBOR)
-    global.CBOR = obj;
+    global.CBOR = cbor;
 
 })(this);
