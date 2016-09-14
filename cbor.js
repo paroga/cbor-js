@@ -1,7 +1,7 @@
 /*
  * The MIT License (MIT)
  *
- * Copyright (c) 2014 Patrick Gansterer <paroga@paroga.com>
+ * Copyright (c) 2014-2016 Patrick Gansterer <paroga@paroga.com>
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -96,7 +96,7 @@ function encode(value) {
       writeUint64(length);
     }
   }
-  
+
   function encodeItem(value) {
     var i;
 
@@ -108,7 +108,7 @@ function encode(value) {
       return writeUint8(0xf6);
     if (value === undefined)
       return writeUint8(0xf7);
-  
+
     switch (typeof value) {
       case "number":
         if (Math.floor(value) === value) {
@@ -170,12 +170,12 @@ function encode(value) {
         }
     }
   }
-  
+
   encodeItem(value);
 
   if ("slice" in data)
     return data.slice(0, offset);
-  
+
   var ret = new ArrayBuffer(offset);
   var retView = new DataView(ret);
   for (var i = 0; i < offset; ++i)
@@ -186,7 +186,7 @@ function encode(value) {
 function decode(data, tagger, simpleValue) {
   var dataView = new DataView(data);
   var offset = 0;
-  
+
   if (typeof tagger !== "function")
     tagger = function(value) { return value; };
   if (typeof simpleValue !== "function")
@@ -207,14 +207,14 @@ function decode(data, tagger, simpleValue) {
     var sign = value & 0x8000;
     var exponent = value & 0x7c00;
     var fraction = value & 0x03ff;
-    
+
     if (exponent === 0x7c00)
       exponent = 0xff << 10;
     else if (exponent !== 0)
       exponent += (127 - 15) << 10;
     else if (fraction !== 0)
       return fraction * POW_2_24;
-    
+
     tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
     return tempDataView.getFloat32(0);
   }
