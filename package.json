@@ -1,6 +1,6 @@
 {
-  "name": "cbor",
-  "version": "0.1.0",
+  "name": "cbor-js",
+  "version": "0.1.1",
   "description": "The Concise Binary Object Representation (CBOR) data format (RFC7049) implemented in pure JavaScript.",
   "keywords": [
     "cbor"
@@ -10,6 +10,9 @@
   "license": "MIT",
   "author": "Patrick Gansterer <paroga@paroga.com> (http://paroga.com/)",
   "main": "cbor.js",
+  "files": [
+    "cbor.js"
+  ],
   "repository": {
     "type": "git",
     "url": "http://github.com/paroga/cbor-js.git"
