@@ -23,9 +23,63 @@
  */
 
 (function(global, undefined) { "use strict";
-var POW_2_24 = 5.960464477539063e-8,
-    POW_2_32 = 4294967296,
-    POW_2_53 = 9007199254740992;
+var POW_2_32 = 4294967296,
+    POW_2_53 = 9007199254740992,
+    singleFloatView = new Float32Array(1),
+    singleIntView = new Uint32Array(singleFloatView.buffer);
+
+
+function getFloat16(value) {
+  singleFloatView[0] = value;
+  var fbits = singleIntView[0];
+  var sign = ( fbits >> 16 ) & 0x8000;
+  var exponentAndMantissa = fbits & 0x7fffffff;
+  var val = ( exponentAndMantissa ) + 0x1000;
+  if (val >= 0x47800000) {
+    /* jshint laxbreak:true */
+    return val < 0x7f800000
+      ? sign | 0x7c00
+      : sign | 0x7c00 | ( fbits & 0x007fffff ) >> 13;
+    /* jshint laxbreak:false */
+  }
+  if (val >= 0x38800000) {
+    return sign | val - 0x38000000 >> 13;
+  }
+  if (val < 0x33000000) {
+    return sign;
+  }
+  val = ( exponentAndMantissa ) >> 23;
+  return sign | ( ( fbits & 0x7fffff | 0x800000 ) +
+    ( 0x800000 >>> val - 102 )
+    >> 126 - val );
+}
+
+function decodeFloat16(value) {
+  var exponent = (value & 0x7C00) >> 10,
+    fraction = value & 0x03FF;
+  return (value >> 15 ? -1 : 1) * (
+      exponent ?
+        (
+          exponent === 0x1F ?
+            fraction ? NaN : Infinity :
+          Math.pow(2, exponent - 15) * (1 + fraction / 0x400)
+        ) :
+      6.103515625e-5 * (fraction / 0x400)
+    );
+}
+
+function checkFloat16(value) {
+  var data = getFloat16(value);
+  var decoded = decodeFloat16(data);
+  return decoded === value || isNaN(decoded) && isNaN(value) ? data : false;
+}
+
+function checkFloat32(value) {
+  singleFloatView[0] = value;
+  var xf = singleFloatView[0];
+  // skip NaN check, should be encoded as float 16
+  return xf === value ? singleIntView[0] : false;
+}
 
 function encode(value) {
   var data = new ArrayBuffer(256);
@@ -50,12 +104,42 @@ function encode(value) {
     lastLength = length;
     return dataView;
   }
+
   function commitWrite() {
     offset += lastLength;
   }
-  function writeFloat64(value) {
-    commitWrite(prepareWrite(8).setFloat64(offset, value));
+
+  function writeFloat16(value) {
+    var dataView = prepareWrite(3);
+    dataView.setUint8(offset, 0xf9);
+    dataView.setUint16(offset+1, getFloat16(value));
+    commitWrite(3);
   }
+  function writeFloat(value) {
+    var dataView;
+    var f16 = checkFloat16(value);
+    if (f16 !== false) {
+      dataView = prepareWrite(3);
+      dataView.setUint8(offset, 0xf9);
+      dataView.setUint16(offset+1, f16);
+      commitWrite();
+      return;
+    }
+    var f32 = checkFloat32(value);
+    if (f32 !== false) {
+      dataView = prepareWrite(5);
+      dataView.setUint8(offset, 0xfa);
+      dataView.setUint32(offset+1, f32);
+      commitWrite();
+      return;
+    }
+    dataView = prepareWrite(9);
+    dataView.setUint8(offset, 0xfb);
+    dataView.setFloat64(offset+1, value);
+      commitWrite();
+  }
+
+
   function writeUint8(value) {
     commitWrite(prepareWrite(1).setUint8(offset, value));
   }
@@ -111,14 +195,18 @@ function encode(value) {
 
     switch (typeof value) {
       case "number":
+        if (isNaN(value) || !isFinite(value)) {
+          return writeFloat16(value);
+        }
+        
         if (Math.floor(value) === value) {
           if (0 <= value && value <= POW_2_53)
             return writeTypeAndLength(0, value);
           if (-POW_2_53 <= value && value < 0)
             return writeTypeAndLength(1, -(value + 1));
         }
-        writeUint8(0xfb);
-        return writeFloat64(value);
+
+        return writeFloat(value);
 
       case "string":
         var utf8data = [];
@@ -172,7 +260,7 @@ function encode(value) {
   }
 
   encodeItem(value);
-
+  /* istanbul ignore if */
   if ("slice" in data)
     return data.slice(0, offset);
 
@@ -200,23 +288,7 @@ function decode(data, tagger, simpleValue) {
     return commitRead(length, new Uint8Array(data, offset, length));
   }
   function readFloat16() {
-    var tempArrayBuffer = new ArrayBuffer(4);
-    var tempDataView = new DataView(tempArrayBuffer);
-    var value = readUint16();
-
-    var sign = value & 0x8000;
-    var exponent = value & 0x7c00;
-    var fraction = value & 0x03ff;
-
-    if (exponent === 0x7c00)
-      exponent = 0xff << 10;
-    else if (exponent !== 0)
-      exponent += (127 - 15) << 10;
-    else if (fraction !== 0)
-      return fraction * POW_2_24;
-
-    tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
-    return tempDataView.getFloat32(0);
+    return decodeFloat16(readUint16());
   }
   function readFloat32() {
     return commitRead(4, dataView.getFloat32(offset));
@@ -398,7 +470,7 @@ var obj = { encode: encode, decode: decode };
 
 if (typeof define === "function" && define.amd)
   define("cbor/cbor", obj);
-else if (typeof module !== "undefined" && module.exports)
+else /* istanbul ignore if */ if (typeof module !== "undefined" && module.exports)
   module.exports = obj;
 else if (!global.CBOR)
   global.CBOR = obj;
