@@ -5,3 +5,4 @@ node_modules
 cbor-js.zip
 cbor.min.js
 sauce_connect.log
+/.idea
