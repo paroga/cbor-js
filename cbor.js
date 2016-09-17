@@ -109,13 +109,14 @@ function encode(value) {
     offset += lastLength;
   }
 
-  function writeFloat16(value) {
+  function encodeFloat16(value) {
     var dataView = prepareWrite(3);
     dataView.setUint8(offset, 0xf9);
     dataView.setUint16(offset+1, getFloat16(value));
     commitWrite(3);
   }
-  function writeFloat(value) {
+  
+  function encodeFloat(value) {
     var dataView;
     var f16 = checkFloat16(value);
     if (f16 !== false) {
@@ -196,7 +197,7 @@ function encode(value) {
     switch (typeof value) {
       case "number":
         if (isNaN(value) || !isFinite(value)) {
-          return writeFloat16(value);
+          return encodeFloat16(value);
         }
         
         if (Math.floor(value) === value) {
@@ -206,7 +207,7 @@ function encode(value) {
             return writeTypeAndLength(1, -(value + 1));
         }
 
-        return writeFloat(value);
+        return encodeFloat(value);
 
       case "string":
         var utf8data = [];
