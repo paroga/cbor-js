@@ -183,10 +183,11 @@ function encode(value) {
   return ret;
 }
 
-function decode(data, tagger, simpleValue) {
+function decode(data, tagger, simpleValue, options) {
   var dataView = new DataView(data);
   var offset = 0;
 
+  var allowRemainingBytes = options && options.allowRemainingBytes || false;
   if (typeof tagger !== "function")
     tagger = function(value) { return value; };
   if (typeof simpleValue !== "function")
@@ -389,8 +390,8 @@ function decode(data, tagger, simpleValue) {
   }
 
   var ret = decodeItem();
-  if (offset !== data.byteLength)
-    throw "Remaining bytes";
+  if (offset !== data.byteLength && !allowRemainingBytes)
+    throw (data.byteLength - offset) + " remaining bytes after end of encoding";
   return ret;
 }
 
