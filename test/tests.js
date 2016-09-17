@@ -440,6 +440,65 @@ test("Remaining Bytes", function() {
   ok(threw, "Thrown exception");
 });
 
+test("Remaining Bytes Throws When Not Opted", function () {
+  var threw = false;
+  try {
+    var arrayBuffer = new Uint8Array([0xa1, 0x61, 0x61, 0x01, 0x00, 0x00, 0x00, 0x00]).buffer;
+    CBOR.decode(arrayBuffer);
+  } catch (e) {
+    threw = e;
+  }
+
+  ok(threw, "Thrown exception");
+});
+
+test("Remaining Bytes Does Not Throw When Opted", function () {
+  var threw = false;
+  try {
+    var arrayBuffer = new Uint8Array([0xa1, 0x61, 0x61, 0x01, 0x00, 0x00, 0x00, 0x00]).buffer;
+    var result = CBOR.decode(arrayBuffer,null,null,{allowRemainingBytes:true});
+    myDeepEqual(result, {a:1}, "Result is clean")
+  } catch (e) {
+    threw = e;
+  }
+
+  notOk(threw, "Thrown exception");
+
+  CBOR.decode(new Uint8Array([0, 0]).buffer,null,null,{allowRemainingBytes:true});
+});
+
+test("No Remaining Bytes 1", function () {
+  var threw = false;
+  var expected = {
+    "cookie": {
+      "path": "/",
+      "_expires": null,
+      "originalMaxAge": null,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": true
+    },
+    "passport": {
+      "user": "ya29.Ci9bA7ax9WxhPwJcLPLSKEx6Q5kjgUr0huhR1MAVG-8ivzjVXpKwGc94tb-8bDOW3g"
+    },
+    "__lastAccess": 1473628668402
+  };
+
+  var decoded = false;
+
+  var arrayBuffer = hex2arrayBuffer(
+    'a366636f6f6b6965a66470617468612f685f65787069726573f66e6f72696769' +
+    '6e616c4d6178416765f668687474704f6e6c79f566736563757265f56873616d' +
+    '6553697465f56870617373706f7274a164757365727847796132392e43693962' +
+    '413761783957786850774a634c504c534b45783651356b6a6755723068756852' +
+    '314d4156472d3869767a6a5658704b774763393474622d3862444f5733676c5f' +
+    '5f6c6173744163636573731b000001571b1d01f2');
+
+  decoded = CBOR.decode(arrayBuffer);
+
+  deepEqual(decoded, expected, "Got expected result");
+});
+
 test("Invalid length encoding", function() {
   var threw = false;
   try {
