@@ -120,9 +120,9 @@ module.exports = function(grunt) {
             src: srcFiles,
             instrumentedFiles: "temp/",
             lcovReport: covDirectory,
-            branchesThresholdPct: 95,
+            branchesThresholdPct: 100,
             functionsThresholdPct: 100,
-            linesThresholdPct: 95
+            linesThresholdPct: 100
           }
         }
       }

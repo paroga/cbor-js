@@ -23,11 +23,102 @@
  */
 
 (function(global, undefined) { "use strict";
-var POW_2_24 = 5.960464477539063e-8,
+var //POW_2_24 = 5.960464477539063e-8, // no longer used
     POW_2_32 = 4294967296,
     POW_2_53 = 9007199254740992;
 
+  var singleFloatView = new Float32Array(1);
+  var singleIntView = new Uint32Array(singleFloatView.buffer);
+
+
+function decodeFloat16(value) {
+  var exponent = (value & 0x7C00) >> 10,
+    fraction = value & 0x03FF;
+  return (value >> 15 ? -1 : 1) * (
+      exponent ?
+        (
+          exponent === 0x1F ?
+            fraction ? NaN : Infinity :
+          Math.pow(2, exponent - 15) * (1 + fraction / 0x400)
+        ) :
+      6.103515625e-5 * (fraction / 0x400)
+    );
+}
+
+function checkFloat32(value) {
+  singleFloatView[0] = value;
+  var xf = singleFloatView[0];
+  // skip NaN check, should be encoded as float 16
+  return xf === value ? singleIntView[0] : false;
+}
+
+function getFloat16(value) {
+  singleFloatView[0] = value;
+  var fbits = singleIntView[0];
+
+
+  /* fast but dirty, causes test failures
+   return (
+   ((fbits>>16)&0x8000)|
+   ((((fbits&0x7f800000)-0x38000000)>>13)&0x7c00)|
+   ((fbits>>13)&0x03ff)
+   );
+   */
+
+
+  var sign = ( fbits >> 16 ) & 0x8000;          // sign only
+  var exponentAndMantissa = fbits & 0x7fffffff;
+  var val = ( exponentAndMantissa ) + 0x1000; // rounded value
+
+  if (val >= 0x47800000) {
+    /* jshint laxbreak:true */
+    return val < 0x7f800000
+      ? sign | 0x7c00
+      : sign | 0x7c00 | ( fbits & 0x007fffff ) >> 13;
+    /* jshint laxbreak:false */
+  }
+
+
+  if (val >= 0x38800000) {             // remains normalized value
+    return sign | val - 0x38000000 >> 13; // exp - 127 + 15
+  }
+
+  if (val < 0x33000000) {             // too small for subnormal
+    return sign;                        // becomes +/-0
+  }
+
+  val = ( exponentAndMantissa ) >> 23;   // tmp exp for subnormal calc
+  return sign | ( ( fbits & 0x7fffff | 0x800000 ) + // add subnormal bit
+    ( 0x800000 >>> val - 102 )       // round depending on cut off
+    >> 126 - val );                  // div by 2^(1-(exp-127+15)) and >> 13 | exp=0
+}
+
+function checkFloat16(value) {
+  var data = getFloat16(value);
+  var decoded = decodeFloat16(data);
+  return decoded === value || isNaN(decoded) && isNaN(value) ? data : false;
+}
+
+function getByteLengthOfUtf8String(value) {
+  var c = 0;
+  for (var i = 0; i < value.length; ++i) {
+    var charCode = value.charCodeAt(i);
+    /* jshint laxbreak:true */
+    //noinspection CommaExpressionJS
+    c += charCode < 0x80
+      ? 1
+      : charCode < 0x800
+      ? 2
+      : charCode < 0xd800
+      ? 3
+      : (++i, 4);
+    /* jshint laxbreak:false */
+  }
+  return c;
+}
+
 function encode(value) {
+  var i;
   var data = new ArrayBuffer(256);
   var dataView = new DataView(data);
   var lastLength;
@@ -50,12 +141,53 @@ function encode(value) {
     lastLength = length;
     return dataView;
   }
+
+  function maybeIntKey(key) {
+    var charCode = key.charCodeAt(0);
+    var isNumKey = charCode >= 48 && charCode <= 57;
+    for (var ki = 1; isNumKey && ki < key.length; ++ki) {
+      charCode = key.charCodeAt(ki);
+      isNumKey = charCode >= 48 && charCode <= 57;
+    }
+    if (isNumKey)
+      key = parseInt(key, 10);
+    return key;
+  }
+
   function commitWrite() {
     offset += lastLength;
   }
-  function writeFloat64(value) {
-    commitWrite(prepareWrite(8).setFloat64(offset, value));
+
+  function writeFloat16(value) {
+    dataView.setUint8(offset, 0xf9);
+    dataView.setUint16(offset+1, getFloat16(value));
+    offset += 3;
   }
+
+  function writeFloat(value) {
+    var f16 = checkFloat16(value);
+    if (f16 !== false) {
+      dataView.setUint8(offset, 0xf9);
+      dataView.setUint16(offset+1, f16);
+      offset += 3;
+      return;
+    }
+    var f32 = checkFloat32(value);
+    if (f32 !== false) {
+      dataView.setUint8(offset, 0xfa);
+      dataView.setUint32(offset+1, f32);
+      offset += 5;
+      return;
+    }
+    //writeUint8(0xfb);
+    //writeFloat64(value);
+
+    dataView.setUint8(offset, 0xfb);
+    dataView.setFloat64(offset+1, value);
+    offset += 9;
+  }
+
+
   function writeUint8(value) {
     commitWrite(prepareWrite(1).setUint8(offset, value));
   }
@@ -97,6 +229,34 @@ function encode(value) {
     }
   }
 
+  function writeUtf8String(value) {
+    var utf8len = getByteLengthOfUtf8String(value);
+    writeTypeAndLength(3, utf8len);
+    for (var i = 0; i < value.length; ++i) {
+      var charCode = value.charCodeAt(i);
+      if (charCode < 0x80) {
+        dataView.setUint8(offset++, charCode);
+      } else if (charCode < 0x800) {
+        dataView.setUint8(offset, 0xc0 | charCode >> 6);
+        dataView.setUint8(offset+1, 0x80 | charCode & 0x3f);
+        offset += 2;
+      } else if (charCode < 0xd800) {
+        dataView.setUint8(offset, 0xe0 | charCode >> 12);
+        dataView.setUint8(offset+1, 0x80 | (charCode >> 6) & 0x3f);
+        dataView.setUint8(offset+2, 0x80 | charCode & 0x3f);
+        offset += 3;
+      } else {
+        charCode = (((charCode & 0x3ff) << 10) | (value.charCodeAt(++i) & 0x3ff)) + 0x10000;
+
+        dataView.setUint8(offset, 0xf0 | charCode >> 18);
+        dataView.setUint8(offset+1, 0x80 | (charCode >> 12) & 0x3f);
+        dataView.setUint8(offset+2, 0x80 | (charCode >> 6) & 0x3f);
+        dataView.setUint8(offset+3, 0x80 | charCode & 0x3f);
+        offset += 4;
+      }
+    }
+  }
+
   function encodeItem(value) {
     var i;
 
@@ -111,42 +271,21 @@ function encode(value) {
 
     switch (typeof value) {
       case "number":
+          if (isNaN(value))
+            return writeFloat16(value);
         if (Math.floor(value) === value) {
           if (0 <= value && value <= POW_2_53)
             return writeTypeAndLength(0, value);
           if (-POW_2_53 <= value && value < 0)
             return writeTypeAndLength(1, -(value + 1));
         }
-        writeUint8(0xfb);
-        return writeFloat64(value);
+
+        //writeUint8(0xfb);
+        //return writeFloat64(value);
+        return writeFloat(value);
 
       case "string":
-        var utf8data = [];
-        for (i = 0; i < value.length; ++i) {
-          var charCode = value.charCodeAt(i);
-          if (charCode < 0x80) {
-            utf8data.push(charCode);
-          } else if (charCode < 0x800) {
-            utf8data.push(0xc0 | charCode >> 6);
-            utf8data.push(0x80 | charCode & 0x3f);
-          } else if (charCode < 0xd800) {
-            utf8data.push(0xe0 | charCode >> 12);
-            utf8data.push(0x80 | (charCode >> 6)  & 0x3f);
-            utf8data.push(0x80 | charCode & 0x3f);
-          } else {
-            charCode = (charCode & 0x3ff) << 10;
-            charCode |= value.charCodeAt(++i) & 0x3ff;
-            charCode += 0x10000;
-
-            utf8data.push(0xf0 | charCode >> 18);
-            utf8data.push(0x80 | (charCode >> 12)  & 0x3f);
-            utf8data.push(0x80 | (charCode >> 6)  & 0x3f);
-            utf8data.push(0x80 | charCode & 0x3f);
-          }
-        }
-
-        writeTypeAndLength(3, utf8data.length);
-        return writeUint8Array(utf8data);
+        return writeUtf8String(value);
 
       default:
         var length;
@@ -163,7 +302,7 @@ function encode(value) {
           length = keys.length;
           writeTypeAndLength(5, length);
           for (i = 0; i < length; ++i) {
-            var key = keys[i];
+            var key = maybeIntKey(keys[i]);
             encodeItem(key);
             encodeItem(value[key]);
           }
@@ -172,21 +311,24 @@ function encode(value) {
   }
 
   encodeItem(value);
-
+  /* istanbul ignore if */
   if ("slice" in data)
     return data.slice(0, offset);
 
   var ret = new ArrayBuffer(offset);
   var retView = new DataView(ret);
-  for (var i = 0; i < offset; ++i)
+  for (i = 0; i < offset; ++i)
     retView.setUint8(i, dataView.getUint8(i));
   return ret;
 }
 
-function decode(data, tagger, simpleValue) {
+function decode(data, tagger, simpleValue, options) {
+  if ( data.byteLength === 0)
+    return undefined;
   var dataView = new DataView(data);
   var offset = 0;
 
+    var allowRemainingBytes = options && options.allowRemainingBytes || false;
   if (typeof tagger !== "function")
     tagger = function(value) { return value; };
   if (typeof simpleValue !== "function")
@@ -199,25 +341,10 @@ function decode(data, tagger, simpleValue) {
   function readArrayBuffer(length) {
     return commitRead(length, new Uint8Array(data, offset, length));
   }
-  function readFloat16() {
-    var tempArrayBuffer = new ArrayBuffer(4);
-    var tempDataView = new DataView(tempArrayBuffer);
-    var value = readUint16();
+    function readFloat16() {
+      return decodeFloat16(readUint16());
+    }
 
-    var sign = value & 0x8000;
-    var exponent = value & 0x7c00;
-    var fraction = value & 0x03ff;
-
-    if (exponent === 0x7c00)
-      exponent = 0xff << 10;
-    else if (exponent !== 0)
-      exponent += (127 - 15) << 10;
-    else if (fraction !== 0)
-      return fraction * POW_2_24;
-
-    tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
-    return tempDataView.getFloat32(0);
-  }
   function readFloat32() {
     return commitRead(4, dataView.getFloat32(offset));
   }
@@ -257,6 +384,7 @@ function decode(data, tagger, simpleValue) {
       return -1;
     throw "Invalid length encoding";
   }
+
   function readIndefiniteStringLength(majorType) {
     var initialByte = readUint8();
     if (initialByte === 0xff)
@@ -267,10 +395,11 @@ function decode(data, tagger, simpleValue) {
     return length;
   }
 
-  function appendUtf16Data(utf16data, length) {
+  function appendUtf16Data(newStr, length) {
     for (var i = 0; i < length; ++i) {
       var value = readUint8();
-      if (value & 0x80) {
+        var highBit = value & 0x80;
+        if (highBit) {
         if (value < 0xe0) {
           value = (value & 0x1f) <<  6
                 | (readUint8() & 0x3f);
@@ -290,13 +419,15 @@ function decode(data, tagger, simpleValue) {
       }
 
       if (value < 0x10000) {
-        utf16data.push(value);
+          newStr += String.fromCharCode(value);
       } else {
         value -= 0x10000;
-        utf16data.push(0xd800 | (value >> 10));
-        utf16data.push(0xdc00 | (value & 0x3ff));
+          newStr += String.fromCharCode(
+            (0xd800 | (value >> 10)),
+            (0xdc00 | (value & 0x3ff)));
       }
     }
+      return newStr;
   }
 
   function decodeItem() {
@@ -322,7 +453,8 @@ function decode(data, tagger, simpleValue) {
       throw "Invalid length";
 
     switch (majorType) {
-      case 0:
+        default:
+        //case 0:
         return length;
       case 1:
         return -1 - length;
@@ -344,13 +476,15 @@ function decode(data, tagger, simpleValue) {
         }
         return readArrayBuffer(length);
       case 3:
-        var utf16data = [];
+        var newStr = "";
         if (length < 0) {
-          while ((length = readIndefiniteStringLength(majorType)) >= 0)
-            appendUtf16Data(utf16data, length);
-        } else
-          appendUtf16Data(utf16data, length);
-        return String.fromCharCode.apply(null, utf16data);
+          while ((length = readIndefiniteStringLength(majorType)) >= 0) {
+            newStr = appendUtf16Data(newStr, length);
+          }
+        } else {
+          newStr = appendUtf16Data(newStr, length);
+        }
+        return newStr;
       case 4:
         var retArray;
         if (length < 0) {
@@ -389,8 +523,8 @@ function decode(data, tagger, simpleValue) {
   }
 
   var ret = decodeItem();
-  if (offset !== data.byteLength)
-    throw "Remaining bytes";
+    if (offset !== data.byteLength && !allowRemainingBytes)
+      throw new Error((data.byteLength - offset) + " remaining bytes after end of encoding");
   return ret;
 }
 
@@ -398,7 +532,7 @@ var obj = { encode: encode, decode: decode };
 
 if (typeof define === "function" && define.amd)
   define("cbor/cbor", obj);
-else if (typeof module !== "undefined" && module.exports)
+else /* istanbul ignore if */ if (typeof module !== "undefined" && module.exports)
   module.exports = obj;
 else if (!global.CBOR)
   global.CBOR = obj;
