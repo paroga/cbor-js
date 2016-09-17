@@ -136,7 +136,7 @@ function encode(value) {
     dataView = prepareWrite(9);
     dataView.setUint8(offset, 0xfb);
     dataView.setFloat64(offset+1, value);
-      commitWrite();
+    commitWrite();
   }
 
 
