@@ -281,8 +281,7 @@ var testcases = function(undefined) {
     ], [
       "Float16 1.5",
       "f93e00",
-      1.5,
-      true
+      1.5
     ], [
       "Float16 65504.0",
       "f97bff",
@@ -291,13 +290,15 @@ var testcases = function(undefined) {
     ], [
       "Float16 5.960464477539063e-8",
       "f90001",
-      5.960464477539063e-8,
-      true
+      5.960464477539063e-8
     ], [
       "Float16 0.00006103515625",
       "f90400",
-      0.00006103515625,
-      true
+      0.00006103515625
+    ], [
+      "Float16 -0.00006103515625",
+      "f98400",
+      -0.00006103515625
     ], [
       "Float16 -5.960464477539063e-8",
       "f98001",
@@ -311,8 +312,7 @@ var testcases = function(undefined) {
     ], [
       "Float16 +Infinity",
       "f97c00",
-      Infinity,
-      true
+      Infinity
     ], [
       "Float16 NaN",
       "f97e00",
@@ -321,18 +321,24 @@ var testcases = function(undefined) {
     ], [
       "Float16 -Infinity",
       "f9fc00",
-      -Infinity,
-      true
+      -Infinity
     ], [
       "Float32 100000.0",
       "fa47c35000",
       100000.0,
       true
     ], [
+      "Float32 10000.125",
+      "fa461c4080",
+      10000.125
+    ], [
+      "Float16 1.125",
+      "f93c80",
+      1.125
+    ], [
       "Float32 3.4028234663852886e+38",
       "fa7f7fffff",
-      3.4028234663852886e+38,
-      true
+      3.4028234663852886e+38
     ], [
       "Float32 +Infinity",
       "fa7f800000",
@@ -371,7 +377,8 @@ var testcases = function(undefined) {
     ], [
       "Float64 +Infinity",
       "fb7ff0000000000000",
-      Infinity
+      Infinity,
+      true
     ], [
       "Float64 NaN",
       "fb7ff8000000000000",
@@ -380,7 +387,12 @@ var testcases = function(undefined) {
     ], [
       "Float64 -Infinity",
       "fbfff0000000000000",
-      -Infinity
+      -Infinity,
+      true
+    ], [
+      "Float64 5e-324",
+      "fb0000000000000001",
+      5e-324
     ] ];
 }();
 
