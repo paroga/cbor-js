@@ -216,7 +216,7 @@ function decode(data, tagger, simpleValue) {
     else if (exponent !== 0)
       exponent += (127 - 15) << 10;
     else if (fraction !== 0)
-      return fraction * POW_2_24;
+      return (sign ? -1 : 1) * fraction * POW_2_24;
 
     tempDataView.setUint32(0, sign << 16 | exponent << 13 | fraction << 13);
     return tempDataView.getFloat32(0);
