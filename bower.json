@@ -1,6 +1,5 @@
 {
   "name": "cbor",
-  "version": "0.1.1",
   "homepage": "https://github.com/paroga/cbor-js",
   "authors": [
     "Patrick Gansterer <paroga@paroga.com>"
