@@ -5,7 +5,7 @@ var testcases = function(undefined) {
     for (var i = 0; i < data.length; ++i) {
       uintArray[i] = data[i];
     }
-    return new Uint8Array(data);  
+    return new Uint8Array(data);
   }
 
   return [
@@ -433,6 +433,13 @@ test("Big Array", function() {
   deepEqual(CBOR.decode(CBOR.encode(value)), value, 'deepEqual')
 });
 
+test("Big String", function() {
+  var value = ''
+  for (var i = 0; i < 150000; ++i)
+    value += Math.floor(i % 10).toString()
+  deepEqual(CBOR.decode(CBOR.encode(value)), value, 'deepEqual')
+});
+
 test("Remaining Bytes", function() {
   var threw = false;
   try {
@@ -504,7 +511,7 @@ test("Tagging", function() {
   }, function(value) {
     return new SimpleValue(value);
   });
-  
+
   ok(decoded[0] instanceof TaggedValue, "first item is a TaggedValue");
   equal(decoded[0].value, 3, "first item value");
   equal(decoded[0].tag, 0x12, "first item tag");

@@ -25,7 +25,8 @@
 (function(global, undefined) { "use strict";
 var POW_2_24 = 5.960464477539063e-8,
     POW_2_32 = 4294967296,
-    POW_2_53 = 9007199254740992;
+    POW_2_53 = 9007199254740992,
+    DECODE_CHUNK_SIZE = 8192;
 
 function encode(value) {
   var data = new ArrayBuffer(256);
@@ -350,7 +351,14 @@ function decode(data, tagger, simpleValue) {
             appendUtf16Data(utf16data, length);
         } else
           appendUtf16Data(utf16data, length);
-        return String.fromCharCode.apply(null, utf16data);
+        var string = "";
+        for (i = 0; i < utf16data.length; i += DECODE_CHUNK_SIZE) {
+          string += String.fromCharCode.apply(
+            null,
+            utf16data.slice(i, i + DECODE_CHUNK_SIZE)
+          );
+        }
+        return string;
       case 4:
         var retArray;
         if (length < 0) {
